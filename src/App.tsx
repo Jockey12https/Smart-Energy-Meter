@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import LoginForm from '@/components/auth/LoginForm';
 import Landing from '@/pages/Landing';
 import Sidebar from '@/components/layout/Sidebar';
-import Dashboard from '@/components/dashboard/Dashboard';
-import Analytics from '@/pages/Analytics';
-import Alerts from '@/pages/Alerts';
-import Devices from '@/pages/Devices';
-import Admin from '@/pages/Admin';
-import Settings from '@/pages/Settings';
+const Dashboard = lazy(() => import('@/components/dashboard/Dashboard'));
+const Analytics = lazy(() => import('@/pages/Analytics'));
+const Alerts = lazy(() => import('@/pages/Alerts'));
+const Devices = lazy(() => import('@/pages/Devices'));
+const Admin = lazy(() => import('@/pages/Admin'));
+const Settings = lazy(() => import('@/pages/Settings'));
 import AdminLogin from '@/components/auth/AdminLogin';
 
 function AppContent() {
@@ -86,7 +86,9 @@ function AppContent() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <main className="flex-1 overflow-y-auto p-6">
-          {renderContent()}
+          <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">Loading...</div>}>
+            {renderContent()}
+          </Suspense>
         </main>
       </div>
     </div>

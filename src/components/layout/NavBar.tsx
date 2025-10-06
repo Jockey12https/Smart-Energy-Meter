@@ -26,7 +26,7 @@ export default function NavBar() {
             <DialogTrigger asChild>
               <Button size="sm">Login</Button>
             </DialogTrigger>
-            <DialogContent className="w-[90vw] max-w-sm max-h-[80vh] overflow-auto p-0 bg-white/40 dark:bg-white/10 backdrop-blur-xl border border-white/40 shadow-2xl rounded-md data-[state=open]:animate-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:zoom-out-95">
+            <DialogContent className="w-[90vw] max-w-sm max-h-[80vh] overflow-auto scrollbar-hide p-0 bg-white/40 dark:bg-white/10 backdrop-blur-xl border border-white/40 shadow-2xl rounded-md data-[state=open]:animate-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:zoom-out-95">
               <div className="p-5">
                 <LoginForm />
               </div>
@@ -39,7 +39,7 @@ export default function NavBar() {
             <DialogTrigger asChild>
               <Button variant="ghost" size="icon"><Menu className="h-5 w-5" /></Button>
             </DialogTrigger>
-            <DialogContent className="w-[92vw] max-w-sm max-h-[80vh] overflow-auto p-0 bg-white/40 dark:bg-white/10 backdrop-blur-xl border border-white/40 shadow-2xl rounded-md data-[state=open]:animate-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:zoom-out-95">
+            <DialogContent className="w-[92vw] max-w-sm max-h-[80vh] overflow-auto scrollbar-hide p-0 bg-white/40 dark:bg-white/10 backdrop-blur-xl border border-white/40 shadow-2xl rounded-md data-[state=open]:animate-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:zoom-out-95">
               <div className="p-5">
                 <LoginForm />
               </div>
