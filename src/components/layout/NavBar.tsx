@@ -7,6 +7,7 @@ import LoginForm from '@/components/auth/LoginForm';
 
 export default function NavBar() {
   const [open, setOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
 
   return (
     <div className="w-full fixed top-0 left-0 bg-background/70 backdrop-blur border-b z-50">
@@ -39,6 +40,20 @@ export default function NavBar() {
             <DialogTrigger asChild>
               <Button variant="ghost" size="icon"><Menu className="h-5 w-5" /></Button>
             </DialogTrigger>
+            <DialogContent className="w-[92vw] max-w-sm max-h-[80vh] overflow-auto scrollbar-hide p-0 bg-white/40 dark:bg-white/10 backdrop-blur-xl border border-white/40 shadow-2xl rounded-md data-[state=open]:animate-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:zoom-out-95">
+              <div className="p-5 space-y-4 text-sm">
+                <a href="#features" className="block hover:text-blue-600" onClick={() => setOpen(false)}>Features</a>
+                <a href="#how" className="block hover:text-blue-600" onClick={() => setOpen(false)}>How it works</a>
+                <a href="#pricing" className="block hover:text-blue-600" onClick={() => setOpen(false)}>Pricing</a>
+                <div className="pt-2">
+                  <Button className="w-full" onClick={() => { setOpen(false); setLoginOpen(true); }}>Login</Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Mobile Login Dialog */}
+          <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
             <DialogContent className="w-[92vw] max-w-sm max-h-[80vh] overflow-auto scrollbar-hide p-0 bg-white/40 dark:bg-white/10 backdrop-blur-xl border border-white/40 shadow-2xl rounded-md data-[state=open]:animate-in data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:zoom-out-95">
               <div className="p-5">
                 <LoginForm />
