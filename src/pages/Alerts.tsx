@@ -90,12 +90,12 @@ export default function Alerts() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold">Alerts & Notifications</h1>
           <p className="text-muted-foreground">Monitor and manage your energy system alerts</p>
         </div>
-        <Badge variant="destructive" className="text-sm">
+        <Badge variant="destructive" className="text-sm self-start sm:self-auto">
           {alerts.filter(alert => !alert.acknowledged).length} Active
         </Badge>
       </div>

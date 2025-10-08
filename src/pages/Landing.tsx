@@ -10,8 +10,8 @@ export default function Landing() {
       <NavBar />
 
       {/* Hero */}
-      <section className="pt-28 pb-16">
-        <div className="max-w-6xl mx-auto px-4 grid lg:grid-cols-2 gap-8 items-center">
+      <section className="pt-24 pb-12 sm:pt-28 sm:pb-16">
+        <div className="max-w-6xl mx-auto px-4 grid lg:grid-cols-2 gap-6 sm:gap-8 items-center">
           <div>
             <h1 className="text-4xl sm:text-5xl font-extrabold leading-tight">
               Real-time energy monitoring for smarter savings
@@ -19,11 +19,15 @@ export default function Landing() {
             <p className="mt-4 text-muted-foreground text-lg">
               Track voltage, current, power, and consumption live. Get insights and optimize your usage.
             </p>
-            <div className="mt-6 flex gap-3">
-              <a href="#features"><Button size="lg" className="bg-emerald-600 hover:bg-emerald-700">Explore Features</Button></a>
-              <a href="#how"><Button size="lg" variant="outline" className="border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950">How it Works</Button></a>
+            <div className="mt-6 flex flex-col sm:flex-row gap-3">
+              <a href="#features">
+                <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 w-full sm:w-auto">Explore Features</Button>
+              </a>
+              <a href="#how">
+                <Button size="lg" variant="outline" className="w-full sm:w-auto border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950">How it Works</Button>
+              </a>
             </div>
-            <div className="mt-6 flex items-center gap-6 text-sm text-muted-foreground">
+            <div className="mt-6 flex flex-wrap items-center gap-3 sm:gap-6 text-xs sm:text-sm text-muted-foreground">
               <div className="flex items-center gap-2"><Zap className="h-4 w-4" /> Live Data</div>
               <div className="flex items-center gap-2"><Shield className="h-4 w-4" /> Secure</div>
               <div className="flex items-center gap-2"><Activity className="h-4 w-4" /> Alerts</div>
@@ -31,7 +35,7 @@ export default function Landing() {
           </div>
           <div>
             <Card>
-              <CardContent className="p-0">
+              <CardContent className="p-0 sm:p-0">
                 {/* SVG Illustration */}
                 <svg viewBox="0 0 600 360" className="w-full h-auto rounded-md">
                   <defs>
@@ -74,8 +78,8 @@ export default function Landing() {
       </section>
 
       {/* Features */}
-      <section id="features" className="py-16 scroll-mt-20">
-        <div className="max-w-6xl mx-auto px-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <section id="features" className="py-12 sm:py-16 scroll-mt-20">
+        <div className="max-w-6xl mx-auto px-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           {[{
             icon: <Gauge className="h-5 w-5" />, title: 'Accurate Metrics', sub: 'Irms, Vrms, Power, kWh'
           },{
@@ -99,7 +103,7 @@ export default function Landing() {
       </section>
 
       {/* How it works */}
-      <section id="how" className="py-16 scroll-mt-20">
+      <section id="how" className="py-12 sm:py-16 scroll-mt-20">
         <div className="max-w-4xl mx-auto px-4 text-center">
           <h2 className="text-2xl font-bold">How it works</h2>
           <p className="mt-3 text-muted-foreground">
@@ -109,8 +113,8 @@ export default function Landing() {
       </section>
 
       {/* Pricing */}
-      <section id="pricing" className="py-16 scroll-mt-20">
-        <div className="max-w-6xl mx-auto px-4 grid md:grid-cols-3 gap-6">
+      <section id="pricing" className="py-12 sm:py-16 scroll-mt-20">
+        <div className="max-w-6xl mx-auto px-4 grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
           {[
             { name: 'Starter', price: 'Free', features: ['Realtime dashboard', 'Email support'] },
             { name: 'Pro', price: '₹499/mo', features: ['Analytics', 'Alerts', 'Priority support'] },

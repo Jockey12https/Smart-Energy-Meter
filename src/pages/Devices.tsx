@@ -119,7 +119,7 @@ export default function Devices() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h1 className="text-2xl font-bold">Device Management</h1>
           <p className="text-muted-foreground">Monitor and manage your smart energy meters</p>

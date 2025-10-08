@@ -2,6 +2,7 @@ import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface ChartData {
   time: string;
@@ -16,6 +17,8 @@ interface RealTimeChartProps {
 }
 
 export default function RealTimeChart({ data }: RealTimeChartProps) {
+  const isMobile = useIsMobile();
+  const chartHeight = isMobile ? 220 : 300;
   const formatTime = (timeStr: string) => {
     const date = new Date(timeStr);
     return date.toLocaleTimeString('en-US', { 
@@ -40,7 +43,7 @@ export default function RealTimeChart({ data }: RealTimeChartProps) {
           </TabsList>
           
           <TabsContent value="voltage-current" className="mt-4">
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={chartHeight}>
               <LineChart data={data}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
@@ -77,7 +80,7 @@ export default function RealTimeChart({ data }: RealTimeChartProps) {
           </TabsContent>
           
           <TabsContent value="power" className="mt-4">
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={chartHeight}>
               <LineChart data={data}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 
@@ -102,7 +105,7 @@ export default function RealTimeChart({ data }: RealTimeChartProps) {
           </TabsContent>
           
           <TabsContent value="energy" className="mt-4">
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={chartHeight}>
               <BarChart data={data.slice(-10)}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis 

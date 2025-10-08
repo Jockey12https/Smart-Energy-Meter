@@ -5,6 +5,9 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import LoginForm from '@/components/auth/LoginForm';
 import Landing from '@/pages/Landing';
 import Sidebar from '@/components/layout/Sidebar';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Menu } from 'lucide-react';
 const Dashboard = lazy(() => import('@/components/dashboard/Dashboard'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
 const Alerts = lazy(() => import('@/pages/Alerts'));
@@ -18,6 +21,7 @@ function AppContent() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [adminGateOk, setAdminGateOk] = useState<boolean>(false);
   const [darkMode, setDarkMode] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     if (darkMode) {
@@ -72,20 +76,40 @@ function AppContent() {
 
   return (
     <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <div className="w-64 flex-shrink-0">
+      {/* Desktop Sidebar */}
+      <div className="hidden md:block w-64 flex-shrink-0">
         <Sidebar 
           activeTab={activeTab} 
-          setActiveTab={setActiveTab}
+          setActiveTab={(tab) => { setActiveTab(tab); }}
           darkMode={darkMode}
           setDarkMode={setDarkMode}
           isAdminSession={false}
         />
       </div>
 
+      {/* Mobile Sheet Sidebar */}
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetTrigger asChild>
+          <Button variant="ghost" size="icon" className="md:hidden absolute top-3 left-3 z-40">
+            <Menu className="h-5 w-5" />
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="p-0 w-72">
+          <Sidebar 
+            activeTab={activeTab}
+            setActiveTab={(tab) => { setActiveTab(tab); setMobileOpen(false); }}
+            darkMode={darkMode}
+            setDarkMode={setDarkMode}
+            isAdminSession={false}
+          />
+        </SheetContent>
+      </Sheet>
+
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <main className="flex-1 overflow-y-auto p-6">
+        {/* Mobile Top Bar Spacer */}
+        <div className="md:hidden h-12" />
+        <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center text-muted-foreground">Loading...</div>}>
             {renderContent()}
           </Suspense>

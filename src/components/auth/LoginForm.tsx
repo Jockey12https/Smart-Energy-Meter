@@ -19,6 +19,7 @@ export default function LoginForm() {
   const { login, signup, resetPassword } = useAuth();
   const [role, setRole] = useState<'admin' | 'user'>('user');
   const [adminPassword, setAdminPassword] = useState('');
+  const [fullName, setFullName] = useState('');
 
   const getErrorMessage = (err: unknown) => {
     if (typeof err === 'object' && err !== null) {
@@ -56,10 +57,14 @@ export default function LoginForm() {
       return setError('Passwords do not match');
     }
 
+    if (!fullName.trim()) {
+      return setError('Please enter your full name');
+    }
+
     try {
       setError('');
       setLoading(true);
-      await signup(email, password, role);
+      await signup(email, password, role, fullName.trim());
     } catch (err) {
       setError(getErrorMessage(err));
     }
@@ -176,11 +181,15 @@ export default function LoginForm() {
             <TabsContent value="signup">
               <form onSubmit={handleSignup} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email</Label>
+                  <Label htmlFor="full-name">Full Name</Label>
+                  <Input id="full-name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Jane Doe" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Input
-                      id="signup-email"
+                      id="email"
                       type="email"
                       placeholder="Enter your email"
                       value={email}
@@ -192,11 +201,11 @@ export default function LoginForm() {
                 </div>
                 
                 <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password</Label>
+                  <Label htmlFor="password">Password</Label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                     <Input
-                      id="signup-password"
+                      id="password"
                       type="password"
                       placeholder="Enter your password"
                       value={password}

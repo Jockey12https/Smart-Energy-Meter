@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,9 +11,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { User, Mail, Phone, MapPin, DollarSign, Palette, Bell, Shield, Download } from 'lucide-react';
 
 export default function Settings() {
-  const { currentUser } = useAuth();
+  const { currentUser, userProfile } = useAuth();
   const [profile, setProfile] = useState({
-    name: 'John Doe',
+    name: '',
     email: currentUser?.email || '',
     phone: '+1 (555) 123-4567',
     address: '123 Main St, City, State 12345'
@@ -64,6 +64,17 @@ export default function Settings() {
     }
   };
 
+  useEffect(() => {
+    // Initialize name and email when userProfile/currentUser becomes available
+    const nameFromProfile = (userProfile as any)?.displayName as string | undefined;
+    const emailFromAuth = currentUser?.email || '';
+    setProfile(prev => ({
+      ...prev,
+      name: nameFromProfile || prev.name || '',
+      email: emailFromAuth,
+    }));
+  }, [userProfile, currentUser]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -98,6 +109,13 @@ export default function Settings() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>User ID (for meter linkage)</Label>
+              <Input
+                value={typeof (userProfile as any)?.uidNumber === 'number' ? String((userProfile as any).uidNumber).padStart(6, '0') : '------'}
+                readOnly
+              />
+            </div>
             <div className="space-y-2">
               <Label htmlFor="name">Full Name</Label>
               <Input

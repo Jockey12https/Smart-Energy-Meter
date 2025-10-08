@@ -11,18 +11,18 @@ export default function NavBar() {
 
   return (
     <div className="w-full fixed top-0 left-0 bg-background/70 backdrop-blur border-b z-50">
-      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
         <div className="flex items-center space-x-2">
           <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
             <Zap className="h-5 w-5 text-blue-600 dark:text-blue-400" />
           </div>
-          <span className="font-semibold">Smart Energy Meter</span>
+          <span className="font-semibold tracking-tight text-base sm:text-lg">Smart Energy <span className="text-blue-600">Meter</span></span>
         </div>
 
         <div className="hidden sm:flex items-center space-x-6 text-sm">
-          <a href="#features" className="hover:text-blue-600">Features</a>
-          <a href="#how" className="hover:text-blue-600">How it works</a>
-          <a href="#pricing" className="hover:text-blue-600">Pricing</a>
+          <a href="#features" className="hover:text-blue-600 font-medium">Features</a>
+          <a href="#how" className="hover:text-blue-600 font-medium">How it works</a>
+          <a href="#pricing" className="hover:text-blue-600 font-medium">Pricing</a>
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button size="sm">Login</Button>
