@@ -59,7 +59,7 @@ export default function Sidebar({ activeTab, setActiveTab, darkMode, setDarkMode
           </div>
           <div>
             <h2 className="text-lg font-semibold">Energy Monitor</h2>
-            <p className="text-sm text-muted-foreground">Smart Meter UI</p>
+            <p className="text-sm text-muted-foreground">Smart Meter</p>
           </div>
         </div>
       </div>

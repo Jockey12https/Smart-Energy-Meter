@@ -6,7 +6,7 @@ import LoginForm from '@/components/auth/LoginForm';
 import Landing from '@/pages/Landing';
 import Sidebar from '@/components/layout/Sidebar';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
 const Dashboard = lazy(() => import('@/components/dashboard/Dashboard'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
@@ -95,6 +95,10 @@ function AppContent() {
           </Button>
         </SheetTrigger>
         <SheetContent side="left" className="p-0 w-72">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Navigation Menu</SheetTitle>
+            <SheetDescription>Access dashboard, analytics, alerts, devices, and settings</SheetDescription>
+          </SheetHeader>
           <Sidebar 
             activeTab={activeTab}
             setActiveTab={(tab) => { setActiveTab(tab); setMobileOpen(false); }}

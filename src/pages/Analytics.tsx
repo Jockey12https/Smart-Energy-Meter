@@ -9,26 +9,45 @@ import { Download, TrendingUp, TrendingDown, Calendar, DollarSign } from 'lucide
 import { DateRange } from 'react-day-picker';
 import { database } from '@/lib/firebase';
 import { onValue, query, ref, orderByKey, limitToLast } from 'firebase/database';
+import { useAuth } from '@/contexts/AuthContext';
 
 type MeterSample = { irms: number; vrms: number; power: number; energy: number; ts: Date };
 
 export default function Analytics() {
+  const { currentUser } = useAuth();
   const [timeRange, setTimeRange] = useState('week');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [samples, setSamples] = useState<MeterSample[]>([]);
 
   useEffect(() => {
-    const dataRef = ref(database, 'SmartMeter/data');
+    if (!currentUser?.uid) return;
+    
+    const dataRef = ref(database, `SmartMeter/${currentUser.uid}`);
     const q = query(dataRef, orderByKey(), limitToLast(1000));
     const unsub = onValue(q, (snapshot) => {
       const val = snapshot.val() as Record<string, any> | null;
       if (!val) return setSamples([]);
-      const list = Object.entries(val).map(([k, v]) => {
-        const irms = parseFloat(v?.Irms ?? v?.irms ?? '0');
-        const vrms = parseFloat(v?.Vrms ?? v?.vrms ?? '0');
-        const power = parseFloat(v?.Power ?? v?.power ?? '0');
-        const energy = parseFloat(v?.kWh ?? v?.energy ?? '0');
-        const ts = new Date(Number(k));
+      const list = Object.entries(val).map(([timestamp, v]) => {
+        const irms = parseFloat(v?.Irms ?? '0');
+        const vrms = parseFloat(v?.Vrms ?? '0');
+        const power = parseFloat(v?.Power ?? '0');
+        const energy = parseFloat(v?.kWh ?? '0');
+        
+        // Parse timestamp format: 2025-10-11_12-45-10
+        let ts: Date;
+        try {
+          // Convert 2025-10-11_12-45-10 to 2025-10-11T12:45:10
+          const isoString = timestamp.replace(/_/g, 'T');
+          ts = new Date(isoString);
+          
+          // If invalid date, use current time
+          if (isNaN(ts.getTime())) {
+            ts = new Date();
+          }
+        } catch {
+          ts = new Date();
+        }
+        
         return {
           irms: Number.isFinite(irms) ? irms : 0,
           vrms: Number.isFinite(vrms) ? vrms : 0,
@@ -40,7 +59,7 @@ export default function Analytics() {
       setSamples(list);
     });
     return () => unsub();
-  }, []);
+  }, [currentUser?.uid]);
 
   const dailyData = useMemo(() => {
     const byDay = new Map<string, number>();

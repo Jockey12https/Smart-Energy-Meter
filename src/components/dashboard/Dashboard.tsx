@@ -6,6 +6,7 @@ import RealTimeChart from '../charts/RealTimeChart';
 import { Zap, Activity, Gauge, Battery, Wifi, WifiOff, Clock } from 'lucide-react';
 import { database } from '@/lib/firebase';
 import { onValue, query, ref, limitToLast, orderByKey } from 'firebase/database';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface EnergyData {
   irms: number;
@@ -16,6 +17,7 @@ interface EnergyData {
 }
 
 export default function Dashboard() {
+  const { currentUser } = useAuth();
   const [currentData, setCurrentData] = useState<EnergyData>({
     irms: 0,
     vrms: 0,
@@ -27,29 +29,42 @@ export default function Dashboard() {
   const [historicalData, setHistoricalData] = useState<EnergyData[]>([]);
   const [isOnline, setIsOnline] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(new Date());
+  const [todayConsumption, setTodayConsumption] = useState(0);
+  const [estimatedCost, setEstimatedCost] = useState(0);
+  const [peakUsage, setPeakUsage] = useState(0);
 
   // Subscribe to Firebase Realtime Database for live data
   useEffect(() => {
-    const dataRef = ref(database, 'SmartMeter/data');
+    if (!currentUser?.uid) return;
+    
+    const dataRef = ref(database, `SmartMeter/${currentUser.uid}`);
     const q = query(dataRef, orderByKey(), limitToLast(50));
     const unsub = onValue(q, (snapshot) => {
       const val = snapshot.val() as Record<string, any> | null;
       if (!val) return;
 
       const entries = Object.entries(val)
-        .sort((a, b) => {
-          const ak = Number(a[0]);
-          const bk = Number(b[0]);
-          if (!Number.isNaN(ak) && !Number.isNaN(bk)) return ak - bk;
-          // Fallback to string compare
-          return a[0].localeCompare(b[0]);
-        })
-        .map(([key, item]) => {
-          const irms = parseFloat(item?.Irms ?? item?.irms ?? '0');
-          const vrms = parseFloat(item?.Vrms ?? item?.vrms ?? '0');
-          const power = parseFloat(item?.Power ?? item?.power ?? '0');
-          const energy = parseFloat(item?.kWh ?? item?.energy ?? '0');
-          const ts = !Number.isNaN(Number(key)) ? new Date(Number(key)) : new Date();
+        .map(([timestamp, item]) => {
+          const irms = parseFloat(item?.Irms ?? '0');
+          const vrms = parseFloat(item?.Vrms ?? '0');
+          const power = parseFloat(item?.Power ?? '0');
+          const energy = parseFloat(item?.kWh ?? '0');
+          
+          // Parse timestamp format: 2025-10-11_12-45-10
+          let ts: Date;
+          try {
+            // Convert 2025-10-11_12-45-10 to 2025-10-11T12:45:10
+            const isoString = timestamp.replace(/_/g, 'T');
+            ts = new Date(isoString);
+            
+            // If invalid date, use current time
+            if (isNaN(ts.getTime())) {
+              ts = new Date();
+            }
+          } catch {
+            ts = new Date();
+          }
+          
           const dataPoint: EnergyData = {
             irms: Number.isFinite(irms) ? irms : 0,
             vrms: Number.isFinite(vrms) ? vrms : 0,
@@ -58,21 +73,39 @@ export default function Dashboard() {
             timestamp: ts.toISOString(),
           };
           return dataPoint;
-        });
+        })
+        .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
       if (entries.length > 0) {
+        // Get the latest entry (last in sorted array)
         const latest = entries[entries.length - 1];
         setCurrentData(latest);
         setHistoricalData(entries);
         setLastUpdate(new Date(latest.timestamp));
         setIsOnline(true);
+
+        // Calculate today's consumption
+        const today = new Date().toISOString().split('T')[0];
+        const todayData = entries.filter(entry => 
+          entry.timestamp.startsWith(today)
+        );
+        const todayTotal = todayData.reduce((sum, entry) => sum + entry.energy, 0);
+        setTodayConsumption(todayTotal);
+
+        // Calculate estimated cost (assuming ₹8.00/kWh)
+        const cost = todayTotal * 8.00;
+        setEstimatedCost(cost);
+
+        // Find peak usage
+        const maxPower = Math.max(...entries.map(entry => entry.power));
+        setPeakUsage(maxPower);
       }
     }, () => {
       setIsOnline(false);
     });
 
     return () => unsub();
-  }, []);
+  }, [currentUser?.uid]);
 
   const getStatus = (value: number, type: 'irms' | 'vrms' | 'power') => {
     switch (type) {
@@ -186,8 +219,8 @@ export default function Dashboard() {
             <CardTitle className="text-sm">Today's Consumption</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">24.7 kWh</div>
-            <p className="text-sm text-muted-foreground">+12% from yesterday</p>
+            <div className="text-2xl font-bold">{todayConsumption.toFixed(1)} kWh</div>
+            <p className="text-sm text-muted-foreground">Real-time data</p>
           </CardContent>
         </Card>
         
@@ -196,7 +229,7 @@ export default function Dashboard() {
             <CardTitle className="text-sm">Estimated Cost</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹197.60</div>
+            <div className="text-2xl font-bold">₹{estimatedCost.toFixed(2)}</div>
             <p className="text-sm text-muted-foreground">@₹8.00/kWh</p>
           </CardContent>
         </Card>
@@ -206,8 +239,8 @@ export default function Dashboard() {
             <CardTitle className="text-sm">Peak Usage</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">3.2 kW</div>
-            <p className="text-sm text-muted-foreground">at 2:30 PM</p>
+            <div className="text-2xl font-bold">{(peakUsage / 1000).toFixed(1)} kW</div>
+            <p className="text-sm text-muted-foreground">Maximum power today</p>
           </CardContent>
         </Card>
       </div>
