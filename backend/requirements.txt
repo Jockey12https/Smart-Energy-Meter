@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+firebase-admin
+tensorflow
+xgboost
+scikit-learn
+pandas
+numpy
+python-multipart
+joblib
