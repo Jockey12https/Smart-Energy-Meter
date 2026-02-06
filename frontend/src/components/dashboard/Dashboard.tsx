@@ -3,9 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import EnergyCard from './EnergyCard';
 import RealTimeChart from '../charts/RealTimeChart';
-import { Zap, Activity, Gauge, Battery, Wifi, WifiOff, Clock } from 'lucide-react';
-import { database } from '@/lib/firebase';
+import { Zap, Activity, Gauge, Battery, Wifi, WifiOff, Clock, Cpu, MapPin } from 'lucide-react';
+import { database, db } from '@/lib/firebase';
 import { onValue, query, ref, limitToLast, orderByKey } from 'firebase/database';
+import { collection, getDocs, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { endpoints } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 interface EnergyData {
@@ -14,6 +16,18 @@ interface EnergyData {
   power: number;
   energy: number;
   timestamp: string;
+}
+
+interface Device {
+  id: string;
+  name: string;
+  meterId: string;
+  location: string;
+  status: 'online' | 'offline' | 'maintenance';
+  lastSeen: string;
+  firmwareVersion: string;
+  batteryLevel?: number;
+  assignedUser?: string;
 }
 
 export default function Dashboard() {
@@ -32,6 +46,8 @@ export default function Dashboard() {
   const [todayConsumption, setTodayConsumption] = useState(0);
   const [estimatedCost, setEstimatedCost] = useState(0);
   const [peakUsage, setPeakUsage] = useState(0);
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [identifying, setIdentifying] = useState(false);
 
   // Subscribe to Firebase Realtime Database for live data
   useEffect(() => {
@@ -116,6 +132,146 @@ export default function Dashboard() {
 
     return () => unsub();
   }, [currentUser?.uid]);
+
+  // Use XGBoost identify API to infer which registered bulb(s) are currently ON
+  useEffect(() => {
+    const inferFromPower = async () => {
+      try {
+        // use the latest power from the most recent historical data point
+        const latestPower = historicalData[historicalData.length - 1]?.power ?? currentData.power;
+        if (!latestPower && latestPower !== 0) return;
+        setIdentifying(true);
+        const resp = await endpoints.identifyDevice([Number(latestPower)]);
+        const payload = resp?.data;
+
+        // Normalize payload to array of strings
+        let tokens: string[] = [];
+        if (payload == null) tokens = [];
+        else if (Array.isArray(payload)) tokens = payload.map(String);
+        else tokens = [String(payload)];
+
+        // Join tokens into single uppercase string for simple checks
+        const joined = tokens.join(',').toUpperCase();
+
+        // Handle canonical outputs from XGBoost: ALL_OFF, ALL_ON, or numbers like '7','12','15' (or combinations)
+        if (joined.includes('ALL_OFF')) {
+          // mark all devices offline (persist changes)
+          const updates = devices.map(async (d) => {
+            if (d.status !== 'offline') {
+              try {
+                await updateDoc(doc(db, 'devices', d.id), { status: 'offline' });
+              } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error('Failed to update device status (ALL_OFF):', d.id, e);
+              }
+            }
+            return { ...d, status: 'offline' };
+          });
+          await Promise.all(updates);
+          setDevices(prev => prev.map(d => ({ ...d, status: 'offline' })));
+        } else if (joined.includes('ALL_ON')) {
+          // mark all devices online (persist changes)
+          const updates = devices.map(async (d) => {
+            if (d.status !== 'online') {
+              try {
+                await updateDoc(doc(db, 'devices', d.id), { status: 'online', lastSeen: serverTimestamp() });
+              } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error('Failed to update device status (ALL_ON):', d.id, e);
+              }
+            }
+            return { ...d, status: 'online' };
+          });
+          await Promise.all(updates);
+          setDevices(prev => prev.map(d => ({ ...d, status: 'online' })));
+        } else {
+          // extract exact tokens 7,12,15
+          const matches = joined.match(/\b(7|12|15)\b/g) || [];
+          const found = new Set(matches.map(m => Number(m)));
+
+          const numToLabel: Record<number, string> = {
+            7: 'Bulb 7W',
+            12: 'Bulb 12W',
+            15: 'Bulb 15W'
+          };
+
+          // compute and persist status per registered device
+          const updates = devices.map(async (d) => {
+            let isOnline = false;
+            for (const n of Array.from(found)) {
+              if (numToLabel[n] && d.name === numToLabel[n]) {
+                isOnline = true;
+                break;
+              }
+            }
+            const newStatus = isOnline ? 'online' : 'offline';
+            if (newStatus !== d.status) {
+              try {
+                await updateDoc(doc(db, 'devices', d.id), { status: newStatus, lastSeen: newStatus === 'online' ? serverTimestamp() : d.lastSeen });
+              } catch (e) {
+                // eslint-disable-next-line no-console
+                console.error('Failed to update device status:', d.id, e);
+              }
+            }
+            return { ...d, status: newStatus };
+          });
+
+          const updated = await Promise.all(updates);
+          setDevices(updated);
+        }
+      } catch (err) {
+        // If identify fails, keep existing device statuses and continue
+        // eslint-disable-next-line no-console
+        console.error('Device identification failed:', err);
+      } finally {
+        setIdentifying(false);
+      }
+    };
+
+    // Run when we have some historical data or currentData updates
+    if (currentUser) {
+      inferFromPower();
+      const id = setInterval(inferFromPower, 15000);
+      return () => clearInterval(id);
+    }
+  }, [currentUser, currentData, historicalData]);
+
+  // Fetch devices from Firestore
+  useEffect(() => {
+    const fetchDevices = async () => {
+      try {
+        const devicesCollection = collection(db, 'devices');
+        const snapshot = await getDocs(devicesCollection);
+        const fetchedDevices: Device[] = [];
+        
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          fetchedDevices.push({
+            id: doc.id,
+            name: data.name || 'Unknown Device',
+            meterId: data.meterId || doc.id,
+            location: data.location || 'Unknown',
+            status: data.status || 'offline',
+            lastSeen: data.lastSeen || new Date().toISOString(),
+            firmwareVersion: data.firmwareVersion || '1.0.0',
+            batteryLevel: data.batteryLevel || 100,
+            assignedUser: data.assignedUser || 'Unassigned'
+          });
+        });
+        
+        setDevices(fetchedDevices);
+      } catch (error) {
+        console.error("Failed to fetch devices from Firestore:", error);
+      }
+    };
+
+    if (currentUser) {
+      fetchDevices();
+      // Refresh devices every 30 seconds
+      const interval = setInterval(fetchDevices, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [currentUser]);
 
   const getStatus = (value: number, type: 'irms' | 'vrms' | 'power') => {
     switch (type) {
@@ -253,6 +409,73 @@ export default function Dashboard() {
             <p className="text-sm text-muted-foreground">Maximum power today</p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Devices Section */}
+      <div>
+        <div className="mb-4">
+          <h2 className="text-xl font-bold">Connected Devices</h2>
+          <p className="text-muted-foreground">Your smart energy meters and sensors</p>
+        </div>
+        
+        {devices.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {devices.map((device) => (
+              <Card key={device.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center space-x-3 flex-1">
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">
+                        <Cpu className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <CardTitle className="text-lg truncate">{device.name}</CardTitle>
+                        <CardDescription className="text-xs">ID: {device.meterId}</CardDescription>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      {device.status === 'online' ? (
+                        <Wifi className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <WifiOff className="h-4 w-4 text-red-600" />
+                      )}
+                      <Badge variant={device.status === 'online' ? 'secondary' : 'destructive'} className="text-xs">
+                        {device.status.toUpperCase()}
+                      </Badge>
+                    </div>
+                    {device.batteryLevel !== undefined && (
+                      <div className="text-sm font-medium">
+                        {device.batteryLevel}% <span className="text-muted-foreground">battery</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-1 text-sm">
+                    <div className="flex items-center space-x-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      <span>{device.location}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Firmware: v{device.firmwareVersion}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card className="text-center py-12">
+            <CardContent>
+              <Cpu className="h-12 w-12 text-muted-foreground mx-auto mb-2 opacity-40" />
+              <p className="text-muted-foreground">No devices added yet</p>
+              <p className="text-sm text-muted-foreground">Go to Devices page to add your first smart meter</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

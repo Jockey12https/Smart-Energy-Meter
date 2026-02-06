@@ -6,7 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Cpu, Plus, Settings, Trash2, Wifi, WifiOff, Activity, MapPin, Calendar } from 'lucide-react';
+import { Cpu, Plus, Settings, Trash2, Wifi, WifiOff, Activity, MapPin, Calendar, Loader2 } from 'lucide-react';
+import { db } from '@/lib/firebase';
+import { collection, addDoc, getDocs, deleteDoc, doc, query, where, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
 interface Device {
   id: string;
@@ -18,51 +22,57 @@ interface Device {
   firmwareVersion: string;
   batteryLevel?: number;
   assignedUser?: string;
+  createdAt?: string;
+  createdBy?: string;
 }
 
 import { endpoints } from '@/services/api';
 
-// Mocks removed, will fetch from API
-const mockDevices: Device[] = [];
-
 export default function Devices() {
+  const { currentUser } = useAuth();
+  const { toast } = useToast();
   const [devices, setDevices] = useState<Device[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [newDevice, setNewDevice] = useState({
     name: '',
-    meterId: '',
-    location: '',
-    assignedUser: ''
+    deviceId: ''
   });
 
   useEffect(() => {
-    const fetchDevices = async () => {
-      try {
-        const response = await endpoints.getDevices();
-        if (response.data && response.data.devices) {
-          // Map dictionary to array
-          const fetchedDevices = Object.entries(response.data.devices).map(([key, value]: [string, any]) => ({
-            id: key,
-            name: value.name || 'Unknown Device',
-            meterId: key, // Assuming key is meterId or stored in value
-            location: value.location || 'Unknown',
-            status: value.is_active ? 'online' : 'offline',
-            lastSeen: value.last_active || new Date().toISOString(),
-            firmwareVersion: value.firmware || '1.0.0',
-            batteryLevel: value.battery || 100,
-            assignedUser: value.assigned_user || 'Unassigned'
-          }));
-          setDevices(fetchedDevices as Device[]);
-        }
-      } catch (error) {
-        console.error("Failed to fetch devices:", error);
-      }
-    };
+    if (!currentUser) return;
 
-    fetchDevices();
-    const interval = setInterval(fetchDevices, 10000);
-    return () => clearInterval(interval);
-  }, []);
+    setIsLoading(true);
+    const devicesCollection = collection(db, 'devices');
+    const unsubscribe = onSnapshot(devicesCollection, (snapshot) => {
+      const fetchedDevices: Device[] = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        fetchedDevices.push({
+          id: doc.id,
+          name: data.name || 'Unknown Device',
+          meterId: data.deviceId || data.meterId || doc.id,
+          location: data.location || 'Unknown',
+          status: data.status || 'offline',
+          lastSeen: data.lastSeen || new Date().toISOString(),
+          firmwareVersion: data.firmwareVersion || '1.0.0',
+          batteryLevel: data.batteryLevel || 100,
+          assignedUser: data.assignedUser || data.userEmail || 'Unassigned',
+          createdAt: data.createdAt,
+          createdBy: data.createdBy
+        });
+      });
+
+      setDevices(fetchedDevices);
+      setIsLoading(false);
+    }, (error) => {
+      console.error('Realtime devices listener error:', error);
+      toast({ title: 'Error', description: 'Failed to load devices in realtime', variant: 'destructive' });
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser, toast]);
 
 
   const getStatusIcon = (status: string) => {
@@ -93,26 +103,92 @@ export default function Devices() {
     return 'text-red-600';
   };
 
-  const handleAddDevice = () => {
-    const device: Device = {
-      id: Date.now().toString(),
-      name: newDevice.name,
-      meterId: newDevice.meterId,
-      location: newDevice.location,
-      status: 'offline',
-      lastSeen: new Date().toISOString(),
-      firmwareVersion: '2.1.4',
-      batteryLevel: 100,
-      assignedUser: newDevice.assignedUser
-    };
+  const handleAddDevice = async () => {
+    if (!newDevice.name || !newDevice.deviceId) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
 
-    setDevices(prev => [...prev, device]);
-    setNewDevice({ name: '', meterId: '', location: '', assignedUser: '' });
-    setIsAddDialogOpen(false);
+    if (!currentUser) {
+      toast({
+        title: "Error",
+        description: "User not authenticated",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const devicesCollection = collection(db, 'devices');
+      
+      const docRef = await addDoc(devicesCollection, {
+        name: newDevice.name,
+        deviceId: newDevice.deviceId,
+        userId: currentUser.uid,
+        userEmail: currentUser.email,
+        status: 'offline',
+        firmwareVersion: '2.1.4',
+        batteryLevel: 100,
+        lastSeen: new Date().toISOString(),
+        createdAt: serverTimestamp(),
+        createdBy: currentUser.email || 'unknown'
+      });
+
+      const device: Device = {
+        id: docRef.id,
+        name: newDevice.name,
+        meterId: newDevice.deviceId,
+        location: currentUser.uid,
+        status: 'offline',
+        lastSeen: new Date().toISOString(),
+        firmwareVersion: '2.1.4',
+        batteryLevel: 100,
+        assignedUser: currentUser.email,
+        createdAt: new Date().toISOString(),
+        createdBy: currentUser.email
+      };
+
+      setDevices(prev => [...prev, device]);
+      setNewDevice({ name: '', deviceId: '' });
+      setIsAddDialogOpen(false);
+
+      toast({
+        title: "Success",
+        description: "Device added successfully to Firestore",
+      });
+    } catch (error) {
+      console.error("Failed to add device:", error);
+      toast({
+        title: "Error",
+        description: "Failed to add device to Firestore",
+        variant: "destructive"
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleRemoveDevice = (id: string) => {
-    setDevices(prev => prev.filter(device => device.id !== id));
+  const handleRemoveDevice = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'devices', id));
+      setDevices(prev => prev.filter(device => device.id !== id));
+      toast({
+        title: "Success",
+        description: "Device removed successfully",
+      });
+    } catch (error) {
+      console.error("Failed to remove device:", error);
+      toast({
+        title: "Error",
+        description: "Failed to remove device",
+        variant: "destructive"
+      });
+    }
   };
 
   return (
@@ -135,7 +211,7 @@ export default function Devices() {
             <DialogHeader>
               <DialogTitle>Add New Device</DialogTitle>
               <DialogDescription>
-                Register a new smart energy meter to your system
+                Register a new smart energy meter to your account
               </DialogDescription>
             </DialogHeader>
 
@@ -144,48 +220,39 @@ export default function Devices() {
                 <Label htmlFor="device-name">Device Name</Label>
                 <Input
                   id="device-name"
-                  placeholder="e.g., Main Meter - Living Room"
+                  placeholder="e.g., Living Room Meter"
                   value={newDevice.name}
                   onChange={(e) => setNewDevice(prev => ({ ...prev, name: e.target.value }))}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="meter-id">Meter ID</Label>
+                <Label htmlFor="device-id">Device ID</Label>
                 <Input
-                  id="meter-id"
-                  placeholder="e.g., SM004"
-                  value={newDevice.meterId}
-                  onChange={(e) => setNewDevice(prev => ({ ...prev, meterId: e.target.value }))}
+                  id="device-id"
+                  placeholder="e.g., SM-001 or METER-A1"
+                  value={newDevice.deviceId}
+                  onChange={(e) => setNewDevice(prev => ({ ...prev, deviceId: e.target.value }))}
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="location">Location</Label>
-                <Input
-                  id="location"
-                  placeholder="e.g., Building A - Floor 2"
-                  value={newDevice.location}
-                  onChange={(e) => setNewDevice(prev => ({ ...prev, location: e.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="assigned-user">Assigned User</Label>
-                <Input
-                  id="assigned-user"
-                  placeholder="user@example.com"
-                  value={newDevice.assignedUser}
-                  onChange={(e) => setNewDevice(prev => ({ ...prev, assignedUser: e.target.value }))}
-                />
+              <div className="space-y-2 pt-2 pb-2 px-3 bg-muted rounded-md">
+                <p className="text-sm font-medium">User Information (Auto-filled)</p>
+                <div className="text-sm text-muted-foreground">
+                  <p><span className="font-semibold">User ID:</span> {currentUser?.uid}</p>
+                  <p><span className="font-semibold">Email:</span> {currentUser?.email}</p>
+                </div>
               </div>
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setIsAddDialogOpen(false)} disabled={isLoading}>
                 Cancel
               </Button>
-              <Button onClick={handleAddDevice}>Add Device</Button>
+              <Button onClick={handleAddDevice} disabled={isLoading}>
+                {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {isLoading ? 'Adding...' : 'Add Device'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -302,15 +369,7 @@ export default function Devices() {
                 </div>
               )}
 
-              <div className="flex space-x-2">
-                <Button variant="outline" size="sm" className="flex-1">
-                  <Settings className="w-4 h-4 mr-2" />
-                  Configure
-                </Button>
-                <Button variant="outline" size="sm" className="flex-1">
-                  View Data
-                </Button>
-              </div>
+              {/* Removed Configure/View Data for DB-managed devices per UX requirement */}
             </CardContent>
           </Card>
         ))}
