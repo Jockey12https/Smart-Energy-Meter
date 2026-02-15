@@ -65,10 +65,15 @@ export default function Alerts() {
   }, []);
 
 
-  const acknowledgeAlert = (id: string) => {
-    setAlerts(prev => prev.map(alert =>
-      alert.id === id ? { ...alert, acknowledged: true } : alert
-    ));
+  const acknowledgeAlert = async (id: string) => {
+    try {
+      await endpoints.acknowledgeAlert(id);
+      setAlerts(prev => prev.map(alert =>
+        alert.id === id ? { ...alert, acknowledged: true } : alert
+      ));
+    } catch (error) {
+      console.error("Failed to acknowledge alert:", error);
+    }
   };
 
   const getAlertIcon = (type: string) => {
@@ -160,25 +165,29 @@ export default function Alerts() {
       <Card>
         <CardHeader>
           <CardTitle>Alert History</CardTitle>
-          <CardDescription>Previously acknowledged alerts</CardDescription>
+          <CardDescription>Previously acknowledged alerts (Last 5)</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {alerts.filter(alert => alert.acknowledged).map((alert) => (
-              <div key={alert.id} className="flex items-center space-x-3 p-3 bg-muted/50 rounded-lg">
-                {getAlertIcon(alert.type)}
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-medium text-sm">{alert.title}</span>
-                    <Badge variant="secondary" className="text-xs">Acknowledged</Badge>
+            {alerts
+              .filter(alert => alert.acknowledged)
+              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+              .slice(0, 5)
+              .map((alert) => (
+                <div key={alert.id} className="flex items-center space-x-3 p-3 bg-muted/50 rounded-lg">
+                  {getAlertIcon(alert.type)}
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium text-sm">{alert.title}</span>
+                      <Badge variant="secondary" className="text-xs">Acknowledged</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">{alert.message}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(alert.timestamp).toLocaleString()}
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">{alert.message}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(alert.timestamp).toLocaleString()}
-                  </p>
                 </div>
-              </div>
-            ))}
+              ))}
           </div>
         </CardContent>
       </Card>

@@ -1,16 +1,18 @@
-import React from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  LayoutDashboard, 
-  BarChart3, 
-  Bell, 
-  Settings, 
-  Users, 
-  Zap, 
+import { database } from '@/lib/firebase';
+import { ref, onValue } from 'firebase/database';
+import {
+  LayoutDashboard,
+  BarChart3,
+  Bell,
+  Settings,
+  Users,
+  Zap,
   LogOut,
   Moon,
   Sun,
@@ -27,19 +29,35 @@ interface SidebarProps {
 
 export default function Sidebar({ activeTab, setActiveTab, darkMode, setDarkMode }: SidebarProps) {
   const { logout, currentUser, currentRole } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const alertsRef = ref(database, 'alerts');
+    const unsubscribe = onValue(alertsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const count = Object.values(data).filter((alert: any) => !alert.is_read).length;
+        setUnreadCount(count);
+      } else {
+        setUnreadCount(0);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const menuItems: { id: string; label: string; icon: any; badge?: string }[] =
     currentRole === 'admin'
       ? [
-          { id: 'admin', label: 'Admin Panel', icon: Users },
-        ]
+        { id: 'admin', label: 'Admin Panel', icon: Users },
+      ]
       : [
-          { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-          { id: 'alerts', label: 'Alerts', icon: Bell, badge: '3' },
-          { id: 'devices', label: 'Devices', icon: Cpu },
-          { id: 'settings', label: 'Settings', icon: Settings },
-        ];
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+        { id: 'alerts', label: 'Alerts', icon: Bell, badge: unreadCount > 0 ? unreadCount.toString() : undefined },
+        { id: 'devices', label: 'Devices', icon: Cpu },
+        { id: 'settings', label: 'Settings', icon: Settings },
+      ];
 
   const handleLogout = async () => {
     try {
@@ -113,11 +131,11 @@ export default function Sidebar({ activeTab, setActiveTab, darkMode, setDarkMode
             </>
           )}
         </Button>
-        
+
         <div className="text-xs text-muted-foreground px-2">
           {currentUser?.email}
         </div>
-        
+
         <Button
           variant="ghost"
           size="sm"

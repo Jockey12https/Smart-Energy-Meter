@@ -9,6 +9,7 @@ import { Download, TrendingUp, TrendingDown, Calendar, DollarSign } from 'lucide
 import { DateRange } from 'react-day-picker';
 import { database } from '@/lib/firebase';
 import { onValue, query, ref, orderByKey, limitToLast } from 'firebase/database';
+import { endpoints } from '@/services/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 type MeterSample = { irms: number; vrms: number; power: number; energy: number; ts: Date };
@@ -18,6 +19,37 @@ export default function Analytics() {
   const [timeRange, setTimeRange] = useState('week');
   const [dateRange, setDateRange] = useState<DateRange | undefined>();
   const [samples, setSamples] = useState<MeterSample[]>([]);
+  const [predictedValue, setPredictedValue] = useState<number | null>(null);
+  const [predictionLoading, setPredictionLoading] = useState(false);
+
+  const fetchPrediction = async () => {
+    if (samples.length === 0) return;
+    setPredictionLoading(true);
+    try {
+      const lastSample = samples[samples.length - 1];
+      const hour = lastSample.ts.getHours();
+      const isDaytime = hour >= 6 && hour < 18 ? 1 : 0;
+      // Features: ['Power', 'Vrms', 'Irms', 'PF', 'hour', 'is_daytime']
+      const pf = lastSample.power / (lastSample.vrms * lastSample.irms) || 1.0;
+      const features = [
+        lastSample.power,
+        lastSample.vrms,
+        lastSample.irms,
+        pf,
+        hour,
+        isDaytime
+      ];
+
+      const response = await endpoints.predictEnergy(features);
+      if (response.data && response.data.predicted_energy !== undefined) {
+        setPredictedValue(response.data.predicted_energy);
+      }
+    } catch (error) {
+      console.error("Prediction failed:", error);
+    } finally {
+      setPredictionLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!currentUser?.uid) return;
@@ -299,15 +331,28 @@ export default function Analytics() {
           <CardDescription>Forecast based on your historical usage patterns</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col space-y-2">
+          <div className="flex flex-col space-y-4">
             <div className="flex items-baseline space-x-2">
               <span className="text-3xl font-bold">
-                {samples.length > 0 ? (samples[samples.length - 1].energy * 1.05).toFixed(3) : "Loading..."}
+                {predictionLoading ? "Calculating..." :
+                  predictedValue !== null ? predictedValue.toFixed(3) :
+                    samples.length > 0 ? (samples[samples.length - 1].energy * 1.05).toFixed(3) : "Loading..."}
               </span>
               <span className="text-sm text-muted-foreground">kWh predicted for tomorrow</span>
             </div>
+            {predictedValue === null && !predictionLoading && samples.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchPrediction}
+                className="w-fit"
+              >
+                <TrendingUp className="w-4 h-4 mr-2" />
+                Generate AI Forecast
+              </Button>
+            )}
             <p className="text-sm text-yellow-600">
-              Note: This is an estimated value using the BiLSTM deep learning model.
+              Note: This value is generated using a BiLSTM deep learning model processed by the backend.
             </p>
           </div>
         </CardContent>

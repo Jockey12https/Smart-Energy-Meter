@@ -16,9 +16,9 @@ BILSTM_SCALER_PATH = os.path.join(MODELS_DIR, "bilstm_scaler.pkl")
 
 class MLService:
     def __init__(self):
-        self.bilstm_model = None
-        self.xgboost_model = None
         self.bilstm_scaler = None
+        self.bulb_history = {0: [], 1: [], 2: []} # Track last 10 states for each bulb
+        self.alerted_bulbs = set() # Track bulbs already alerted for fluctuation
         self.load_models()
 
     def load_models(self):
@@ -47,6 +47,26 @@ class MLService:
         except Exception as e:
             print(f"Error loading BiLSTM scaler: {e}")
 
+    def _check_fluctuation(self, bulb_idx: int, state: int):
+        """
+        Check if a bulb is fluctuating based on history.
+        Fluctuation: 4+ toggles in recent history.
+        """
+        history = self.bulb_history[bulb_idx]
+        history.append(state)
+        if len(history) > 10:
+            history.pop(0)
+        
+        if len(history) < 6:
+            return False
+            
+        toggles = 0
+        for i in range(1, len(history)):
+            if history[i] != history[i-1]:
+                toggles += 1
+        
+        return toggles >= 4
+
     def predict_energy(self, features: List[float]):
         """
         Predict energy usage using BiLSTM model.
@@ -71,13 +91,29 @@ class MLService:
             # For now, assuming we reshape to (1, 1, n_features) or (1, n_features)
             # We'll try (1, 1, n_features) as BiLSTM usually takes sequences.
             try:
-                data_3d = data.reshape(1, 1, -1)
-                prediction = self.bilstm_model.predict(data_3d)
-            except:
-                 # Fallback to 2D if model is not sequence-based or different shape
-                prediction = self.bilstm_model.predict(data)
+                # Based on the model summary, the first layer expects a sequence of length 20.
+                # If we only have one sample, we repeat it 20 times to match the expected input shape.
+                if data.shape[1] == 6:
+                    data_3d = np.repeat(data[:, np.newaxis, :], 20, axis=1)
+                else:
+                    # Fallback or handle different features if any
+                    data_3d = data.reshape(1, -1, 6)
                 
-            return float(prediction[0][0]) if prediction.ndim > 1 else float(prediction[0])
+                prediction = self.bilstm_model.predict(data_3d)
+            except Exception as e:
+                print(f"BiLSTM prediction failed with 3D input: {e}")
+                # Ultimate fallback to 2D
+                prediction = self.bilstm_model.predict(data)
+            
+            # Log raw prediction for debugging
+            print(f"Raw BiLSTM prediction: {prediction}")
+
+            # User requested the raw positive value from the prediction instead of inverse transformed value.
+            # We take the absolute value of the first output element.
+            result = abs(float(prediction[0][0])) if prediction.ndim > 1 else abs(float(prediction[0]))
+            
+            print(f"Final prediction result (raw positive): {result}")
+            return result
         except Exception as e:
             print(f"Prediction error: {e}")
             raise e
@@ -98,6 +134,41 @@ class MLService:
             # Assuming raw data for now or pre-scaled.
             
             prediction = self.xgboost_model.predict(data)
+            
+            # Log identified devices to terminal
+            if len(prediction) > 0:
+                # Handle both 2D (batch) and 1D outputs
+                bits = prediction[0] if prediction.ndim > 1 else prediction
+                labels = ['12W Bulb', '15W Bulb', '7W Bulb']
+                print("\n" + "="*20 + " XGBOOST IDENTIFICATION " + "="*20)
+                
+                from services.firebase_service import add_alert
+                import uuid
+                from datetime import datetime
+
+                for i, label in enumerate(labels):
+                    state = int(bits[i])
+                    status = "ON" if state else "OFF"
+                    print(f"{label}: {status}")
+                    
+                    # Check for fluctuation
+                    if self._check_fluctuation(i, state):
+                        if i not in self.alerted_bulbs:
+                            print(f"!!! FLUCTUATION DETECTED for {label} !!!")
+                            alert_data = {
+                                "id": str(uuid.uuid4()),
+                                "title": "Device Fluctuation Detected",
+                                "message": f"Technical fault: {label} is fluctuating repeatedly (Potential Fault).",
+                                "severity": "high",
+                                "timestamp": datetime.now().isoformat(),
+                                "is_read": False
+                            }
+                            add_alert(alert_data)
+                            self.alerted_bulbs.add(i) # Mark as alerted
+                        else:
+                            print(f"Fluctuation continued for {label}, but alert already sent.")
+                print("="*64 + "\n")
+
             # convert numpy type to python native
             return prediction.tolist()
         except Exception as e:

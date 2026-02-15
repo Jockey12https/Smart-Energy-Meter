@@ -35,6 +35,7 @@ export const endpoints = {
     identifyDevice: (powerReadings: number[]) => api.post('/identify/device', { power_readings: powerReadings }),
     getAlerts: () => api.get('/alerts'),
     createAlert: (alert: Omit<Alert, 'id'>) => api.post('/alerts', alert),
+    acknowledgeAlert: (alertId: string) => api.put(`/alerts/${alertId}/acknowledge`),
     getDevices: () => api.get('/devices'),
 };
 

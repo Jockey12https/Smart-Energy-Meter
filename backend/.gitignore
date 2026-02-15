@@ -1,0 +1,8 @@
+# Python secrets and temporary files
+.env
+serviceaccount.json
+serviceaccount.js
+"service account.js"
+__pycache__/
+*.pyc
+*.log

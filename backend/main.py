@@ -8,7 +8,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from models_schemas import DeviceIdentificationRequest, PredictionRequest, Alert
-from services.firebase_service import get_realtime_data, add_alert, update_device_status
+from services.firebase_service import get_realtime_data, add_alert, update_device_status, get_firestore_devices, acknowledge_alert
 from services.ml_service import ml_service_instance
 
 app = FastAPI(title="Smart Energy Meter Backend")
@@ -56,9 +56,16 @@ async def create_alert(alert: Alert):
     add_alert(alert.dict())
     return {"message": "Alert added successfully"}
 
+@app.put("/alerts/{alert_id}/acknowledge")
+async def acknowledge_alert_endpoint(alert_id: str):
+    success = acknowledge_alert(alert_id)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to acknowledge alert")
+    return {"message": "Alert acknowledged"}
+
 @app.get("/devices")
 async def get_devices():
-    data = get_realtime_data("/devices")
+    data = get_firestore_devices()
     return {"devices": data}
 
 # Endpoint to trigger identification based on current Firebase state (optional)

@@ -6,7 +6,10 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Cpu, Plus, Settings, Trash2, Wifi, WifiOff, Activity, MapPin, Calendar } from 'lucide-react';
+import { Cpu, Plus, Settings, Trash2, Wifi, WifiOff, Activity, MapPin, Calendar, Fingerprint, RefreshCcw } from 'lucide-react';
+import { database } from '@/lib/firebase';
+import { onValue, query, ref, orderByKey, limitToLast } from 'firebase/database';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Device {
   id: string;
@@ -18,6 +21,7 @@ interface Device {
   firmwareVersion: string;
   batteryLevel?: number;
   assignedUser?: string;
+  isAIVerified?: boolean;
 }
 
 import { endpoints } from '@/services/api';
@@ -35,24 +39,109 @@ export default function Devices() {
     assignedUser: ''
   });
 
+  const { currentUser } = useAuth();
+  const [identifying, setIdentifying] = useState(false);
+  const [identResults, setIdentResults] = useState<number[]>([]);
+
+  const runIdentification = async () => {
+    if (!currentUser?.uid) return;
+    setIdentifying(true);
+    try {
+      // 1. Fetch last 2 samples for DeltaP calculation
+      const dataRef = ref(database, `SmartMeter/users/${currentUser.uid}/data`);
+      const q = query(dataRef, orderByKey(), limitToLast(2));
+
+      onValue(q, async (snapshot) => {
+        const val = snapshot.val();
+        if (!val) return;
+
+        const sortedSamples = Object.values(val).sort((a: any, b: any) =>
+          (a.ts || '').localeCompare(b.ts || '')
+        );
+
+        if (sortedSamples.length < 1) return;
+
+        const current = sortedSamples[sortedSamples.length - 1] as any;
+        const prev = sortedSamples.length > 1 ? sortedSamples[sortedSamples.length - 2] as any : current;
+
+        const irms = parseFloat(current.Irms ?? '0');
+        const vrms = parseFloat(current.Vrms ?? '0');
+        const power = parseFloat(current.Power ?? '0');
+        const kwh = parseFloat(current.kWh ?? '0');
+
+        const prevPower = parseFloat(prev.Power ?? '0');
+        const deltaP = power - prevPower;
+
+        const va = vrms * irms;
+        const varP = Math.sqrt(Math.max(0, Math.pow(va, 2) - Math.pow(power, 2)));
+        const pf = power / va || 1.0;
+
+        // Features: ['Irms', 'Power', 'Vrms', 'kWh', 'DeltaP', 'VarP', 'PF']
+        const features = [irms, power, vrms, kwh, deltaP, varP, pf];
+
+        const response = await endpoints.identifyDevice(features);
+        if (response.data && response.data.identified_device) {
+          const bits = response.data.identified_device[0]; // e.g., [1, 0, 1]
+          setIdentResults(bits);
+
+          // Mapping index to device name patterns
+          const bitNames = ['12w', '15w', '7w'];
+
+          setDevices(prevDevices =>
+            prevDevices.map(device => {
+              const deviceNameLower = device.name.toLowerCase();
+              // Check if this device matches any of our AI-monitored bulbs
+              const bitIndex = bitNames.findIndex(pattern => deviceNameLower.includes(pattern));
+
+              if (bitIndex !== -1) {
+                // If AI says this index is 1, it's online
+                return {
+                  ...device,
+                  status: bits[bitIndex] ? 'online' : 'offline',
+                  isAIVerified: true
+                };
+              }
+              return device;
+            })
+          );
+        }
+      }, { onlyOnce: true });
+
+    } catch (error) {
+      console.error("Identification failed:", error);
+    } finally {
+      setIdentifying(false);
+    }
+  };
+
   useEffect(() => {
     const fetchDevices = async () => {
       try {
         const response = await endpoints.getDevices();
         if (response.data && response.data.devices) {
-          // Map dictionary to array
-          const fetchedDevices = Object.entries(response.data.devices).map(([key, value]: [string, any]) => ({
-            id: key,
-            name: value.name || 'Unknown Device',
-            meterId: key, // Assuming key is meterId or stored in value
-            location: value.location || 'Unknown',
-            status: value.is_active ? 'online' : 'offline',
-            lastSeen: value.last_active || new Date().toISOString(),
-            firmwareVersion: value.firmware || '1.0.0',
-            batteryLevel: value.battery || 100,
-            assignedUser: value.assigned_user || 'Unassigned'
-          }));
-          setDevices(fetchedDevices as Device[]);
+          setDevices(prevDevices => {
+            const fetchedDevices = Object.entries(response.data.devices).map(([key, value]: [string, any]) => {
+              const deviceId = value.deviceId || key;
+              const existingDevice = prevDevices.find(d => d.id === key || d.meterId === deviceId);
+
+              return {
+                id: key,
+                name: value.name || 'Unknown Device',
+                meterId: deviceId,
+                location: value.location || 'Unknown',
+                // Preserve AI status if available, else use Firestore status
+                status: existingDevice?.isAIVerified
+                  ? existingDevice.status
+                  : ((value.status === 'online' || value.is_active) ? 'online' : 'offline'),
+                lastSeen: value.lastSeen || value.last_active || new Date().toISOString(),
+                firmwareVersion: value.firmwareVersion || value.firmware || '1.0.0',
+                batteryLevel: value.batteryLevel || value.battery || 100,
+                assignedUser: value.userEmail || value.assigned_user || 'Unassigned',
+                isAIVerified: existingDevice?.isAIVerified || false
+              };
+            });
+            return fetchedDevices as Device[];
+          });
         }
       } catch (error) {
         console.error("Failed to fetch devices:", error);
@@ -191,6 +280,59 @@ export default function Devices() {
         </Dialog>
       </div>
 
+      {/* AI Identification Section */}
+      <Card className="border-blue-200 bg-blue-50 dark:bg-blue-950 dark:border-blue-900 shadow-sm transition-all hover:shadow-md">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-blue-200 dark:bg-blue-800 rounded-full">
+                <Fingerprint className="w-5 h-5 text-blue-700 dark:text-blue-200" />
+              </div>
+              <div>
+                <CardTitle className="text-lg">AI Device Signature Identification</CardTitle>
+                <CardDescription>
+                  XGBoost NILM Model Analysis
+                </CardDescription>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              onClick={runIdentification}
+              disabled={identifying}
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
+            >
+              {identifying ? <RefreshCcw className="w-4 h-4 mr-2 animate-spin" /> : <Activity className="w-4 h-4 mr-2" />}
+              {identifying ? "Analyzing..." : "Identify Active Loads"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            {identResults.length > 0 ? (
+              identResults.map((isOn, index) => {
+                const deviceNames = ['Bulb 12W', 'Bulb 15W', 'Bulb 7W'];
+                return (
+                  <div key={index} className="flex items-center justify-between p-3 bg-white dark:bg-slate-900 rounded-xl border border-blue-100 dark:border-blue-900/50 shadow-sm">
+                    <span className="text-sm font-semibold">{deviceNames[index] || `Load ${index + 1}`}</span>
+                    <Badge className={isOn
+                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 border-green-200'
+                      : 'bg-slate-100 text-slate-400 dark:bg-slate-800/50 dark:text-slate-500 border-transparent'}
+                    >
+                      {isOn ? 'ACTIVE' : 'OFF'}
+                    </Badge>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="col-span-full border-2 border-dashed border-blue-100 dark:border-blue-900/30 rounded-xl py-8 text-center bg-white/50 dark:bg-slate-900/50">
+                <Activity className="w-8 h-8 text-blue-200 dark:text-blue-900 mx-auto mb-2" />
+                <p className="text-sm text-blue-400 dark:text-blue-600 font-medium">Click "Identify Active Loads" to scan for running appliances</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Device Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
@@ -258,6 +400,12 @@ export default function Devices() {
                         {getStatusIcon(device.status)}
                         <span className="ml-1">{device.status.toUpperCase()}</span>
                       </Badge>
+                      {device.isAIVerified && (
+                        <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-600 bg-blue-50 py-0 h-5">
+                          <Fingerprint className="w-3 h-3 mr-1" />
+                          AI VERIFIED
+                        </Badge>
+                      )}
                     </CardDescription>
                   </div>
                 </div>
