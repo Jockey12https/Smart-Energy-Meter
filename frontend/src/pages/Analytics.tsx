@@ -135,7 +135,9 @@ export default function Analytics() {
     }
     const total = Object.values(totals).reduce((a, b) => a + b, 0) || 1;
     const colors = { Lighting: '#8884d8', HVAC: '#82ca9d', Appliances: '#ffc658', Electronics: '#ff7300', Others: '#00ff00' } as Record<string, string>;
-    return Object.entries(totals).map(([name, value]) => ({ name, value: Math.round((value / total) * 100), color: colors[name] }));
+    return Object.entries(totals)
+      .map(([name, value]) => ({ name, value: Math.round((value / total) * 100), color: colors[name] }))
+      .filter((item) => item.value > 0);
   }, [samples]);
 
   const handleExport = (format: 'csv' | 'pdf') => {

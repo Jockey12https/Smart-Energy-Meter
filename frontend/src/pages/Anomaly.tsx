@@ -5,16 +5,19 @@ import { Button } from "@/components/ui/button";
 import { AlertCircle, CheckCircle2, ShieldAlert, Activity, RefreshCw } from "lucide-react";
 import { endpoints } from '@/services/api';
 import { toast } from "sonner";
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Anomaly() {
+    const { currentUser } = useAuth();
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<any>(null);
     const [autoRefresh, setAutoRefresh] = useState(true);
 
     const fetchAnomaly = async () => {
+        if (!currentUser?.uid) return;
         setLoading(true);
         try {
-            const response = await endpoints.detectAnomaly();
+            const response = await endpoints.detectAnomaly(currentUser.uid);
             setResult(response.data.anomaly_result);
         } catch (error) {
             console.error("Failed to fetch anomaly data", error);
@@ -25,12 +28,13 @@ export default function Anomaly() {
     };
 
     useEffect(() => {
+        if (!currentUser?.uid) return;
         fetchAnomaly();
         if (autoRefresh) {
             const interval = setInterval(fetchAnomaly, 5000);
             return () => clearInterval(interval);
         }
-    }, [autoRefresh]);
+    }, [autoRefresh, currentUser?.uid]);
 
     const isAnomaly = result?.is_anomaly;
 

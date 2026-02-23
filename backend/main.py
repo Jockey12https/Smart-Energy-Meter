@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import FastAPI, HTTPException, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
@@ -69,9 +69,10 @@ async def get_devices():
     return {"devices": data}
 
 @app.post("/trigger-identification")
-async def trigger_ident(user_id: str = "v7LHzYJqMEdn3opIub1cWFZTBcf2"):
+async def trigger_ident(user_id: str = Query(..., description="Firebase UID of the logged-in user")):
     """
     Trigger identification based on the latest readings in Firebase.
+    user_id must be passed by the frontend (the logged-in Firebase UID).
     """
     try:
         # 1. Fetch recent readings from Firebase (objects with timestamps)
@@ -93,10 +94,11 @@ async def trigger_ident(user_id: str = "v7LHzYJqMEdn3opIub1cWFZTBcf2"):
         raise HTTPException(status_code=500, detail=f"Identification trigger failed: {str(e)}")
 
 @app.post("/detect-anomaly")
-async def detect_anomaly(user_id: str = "v7LHzYJqMEdn3opIub1cWFZTBcf2"):
+async def detect_anomaly(user_id: str = Query(..., description="Firebase UID of the logged-in user")):
     """
     Detect energy anomalies using the energy_anomaly_model.
     Fetches the latest readings from Firebase RTDB.
+    user_id must be passed by the frontend (the logged-in Firebase UID).
     """
     try:
         # 1. Fetch recent readings (at least 10-20 for rolling stats)
