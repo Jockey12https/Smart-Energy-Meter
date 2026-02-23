@@ -37,6 +37,8 @@ export const endpoints = {
     createAlert: (alert: Omit<Alert, 'id'>) => api.post('/alerts', alert),
     acknowledgeAlert: (alertId: string) => api.put(`/alerts/${alertId}/acknowledge`),
     getDevices: () => api.get('/devices'),
+    triggerIdentification: (userId?: string) => api.post('/trigger-identification', null, { params: { user_id: userId } }),
+    detectAnomaly: (userId?: string) => api.post('/detect-anomaly', null, { params: { user_id: userId } }),
 };
 
 export default api;

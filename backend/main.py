@@ -8,7 +8,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from models_schemas import DeviceIdentificationRequest, PredictionRequest, Alert
-from services.firebase_service import get_realtime_data, add_alert, update_device_status, get_firestore_devices, acknowledge_alert
+from services.firebase_service import get_realtime_data, add_alert, update_device_status, get_firestore_devices, acknowledge_alert, get_recent_readings
 from services.ml_service import ml_service_instance
 
 app = FastAPI(title="Smart Energy Meter Backend")
@@ -68,14 +68,55 @@ async def get_devices():
     data = get_firestore_devices()
     return {"devices": data}
 
-# Endpoint to trigger identification based on current Firebase state (optional)
 @app.post("/trigger-identification")
-async def trigger_ident():
-    # 1. Fetch current readings from Firebase
-    # 2. Run inference
-    # 3. Update Firebase with result
-    # This is a placeholder for the "using existing data" requirement
-    pass
+async def trigger_ident(user_id: str = "v7LHzYJqMEdn3opIub1cWFZTBcf2"):
+    """
+    Trigger identification based on the latest readings in Firebase.
+    """
+    try:
+        # 1. Fetch recent readings from Firebase (objects with timestamps)
+        readings = get_recent_readings(user_id, limit=7)
+        
+        if len(readings) < 1:
+            return {"message": "No data found to run identification."}
+            
+        # 2. Run inference (this handles freshness and updates Firebase status)
+        result = ml_service_instance.identify_device(readings)
+        
+        # 3. Return result
+        return {
+            "user_id": user_id,
+            "readings_used": readings,
+            "identified_device_states": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Identification trigger failed: {str(e)}")
+
+@app.post("/detect-anomaly")
+async def detect_anomaly(user_id: str = "v7LHzYJqMEdn3opIub1cWFZTBcf2"):
+    """
+    Detect energy anomalies using the energy_anomaly_model.
+    Fetches the latest readings from Firebase RTDB.
+    """
+    try:
+        # 1. Fetch recent readings (at least 10-20 for rolling stats)
+        readings = get_recent_readings(user_id, limit=20)
+        
+        if len(readings) < 1:
+            return {"message": "No data found to run anomaly detection."}
+            
+        # 2. Run anomaly detection
+        result = ml_service_instance.detect_anomaly(readings)
+        
+        # 3. Return result
+        return {
+            "user_id": user_id,
+            "readings_count": len(readings),
+            "anomaly_result": result
+        }
+    except Exception as e:
+        print(f"Anomaly detection trigger failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Anomaly detection failed: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

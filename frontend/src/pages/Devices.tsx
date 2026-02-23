@@ -47,66 +47,37 @@ export default function Devices() {
     if (!currentUser?.uid) return;
     setIdentifying(true);
     try {
-      // 1. Fetch last 2 samples for DeltaP calculation
-      const dataRef = ref(database, `SmartMeter/users/${currentUser.uid}/data`);
-      const q = query(dataRef, orderByKey(), limitToLast(2));
+      const response = await (endpoints as any).triggerIdentification(currentUser.uid);
 
-      onValue(q, async (snapshot) => {
-        const val = snapshot.val();
-        if (!val) return;
+      if (response.data && response.data.identified_device_states) {
+        const states = response.data.identified_device_states; // This is a 2D array from model: [[1, 0, 1]]
+        const bits = states[0]; // [1, 0, 1]
+        setIdentResults(bits);
 
-        const sortedSamples = Object.values(val).sort((a: any, b: any) =>
-          (a.ts || '').localeCompare(b.ts || '')
+        const bitNames = ['12w', '15w', '7w'];
+
+        setDevices(prevDevices =>
+          prevDevices.map(device => {
+            const deviceNameLower = device.name.toLowerCase();
+            const bitIndex = bitNames.findIndex(pattern => deviceNameLower.includes(pattern));
+
+            if (bitIndex !== -1) {
+              return {
+                ...device,
+                status: bits[bitIndex] ? 'online' : 'offline',
+                isAIVerified: true
+              };
+            }
+            return device;
+          })
         );
-
-        if (sortedSamples.length < 1) return;
-
-        const current = sortedSamples[sortedSamples.length - 1] as any;
-        const prev = sortedSamples.length > 1 ? sortedSamples[sortedSamples.length - 2] as any : current;
-
-        const irms = parseFloat(current.Irms ?? '0');
-        const vrms = parseFloat(current.Vrms ?? '0');
-        const power = parseFloat(current.Power ?? '0');
-        const kwh = parseFloat(current.kWh ?? '0');
-
-        const prevPower = parseFloat(prev.Power ?? '0');
-        const deltaP = power - prevPower;
-
-        const va = vrms * irms;
-        const varP = Math.sqrt(Math.max(0, Math.pow(va, 2) - Math.pow(power, 2)));
-        const pf = power / va || 1.0;
-
-        // Features: ['Irms', 'Power', 'Vrms', 'kWh', 'DeltaP', 'VarP', 'PF']
-        const features = [irms, power, vrms, kwh, deltaP, varP, pf];
-
-        const response = await endpoints.identifyDevice(features);
-        if (response.data && response.data.identified_device) {
-          const bits = response.data.identified_device[0]; // e.g., [1, 0, 1]
-          setIdentResults(bits);
-
-          // Mapping index to device name patterns
-          const bitNames = ['12w', '15w', '7w'];
-
-          setDevices(prevDevices =>
-            prevDevices.map(device => {
-              const deviceNameLower = device.name.toLowerCase();
-              // Check if this device matches any of our AI-monitored bulbs
-              const bitIndex = bitNames.findIndex(pattern => deviceNameLower.includes(pattern));
-
-              if (bitIndex !== -1) {
-                // If AI says this index is 1, it's online
-                return {
-                  ...device,
-                  status: bits[bitIndex] ? 'online' : 'offline',
-                  isAIVerified: true
-                };
-              }
-              return device;
-            })
-          );
+      } else {
+        console.warn("Identification returned no states:", response.data);
+        // If message is "Data is stale" or "No data found", we might want to reset to offline
+        if (response.data?.message?.includes("stale") || response.data?.message?.includes("No data")) {
+          setIdentResults([0, 0, 0]);
         }
-      }, { onlyOnce: true });
-
+      }
     } catch (error) {
       console.error("Identification failed:", error);
     } finally {

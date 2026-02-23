@@ -16,7 +16,8 @@ import {
   LogOut,
   Moon,
   Sun,
-  Cpu
+  Cpu,
+  ShieldAlert
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -54,6 +55,7 @@ export default function Sidebar({ activeTab, setActiveTab, darkMode, setDarkMode
       : [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+        { id: 'anomaly', label: 'Anomaly', icon: ShieldAlert },
         { id: 'alerts', label: 'Alerts', icon: Bell, badge: unreadCount > 0 ? unreadCount.toString() : undefined },
         { id: 'devices', label: 'Devices', icon: Cpu },
         { id: 'settings', label: 'Settings', icon: Settings },

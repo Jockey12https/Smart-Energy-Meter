@@ -11,6 +11,7 @@ import { Menu } from 'lucide-react';
 const Dashboard = lazy(() => import('@/components/dashboard/Dashboard'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
 const Alerts = lazy(() => import('@/pages/Alerts'));
+const Anomaly = lazy(() => import('@/pages/Anomaly'));
 const Devices = lazy(() => import('@/pages/Devices'));
 const Admin = lazy(() => import('@/pages/Admin'));
 const Settings = lazy(() => import('@/pages/Settings'));
@@ -54,6 +55,9 @@ function AppContent() {
       case 'alerts':
         if (currentRole === 'admin') return <Admin />;
         return <Alerts />;
+      case 'anomaly':
+        if (currentRole === 'admin') return <Admin />;
+        return <Anomaly />;
       case 'devices':
         if (currentRole === 'admin') return <Admin />;
         return <Devices />;
@@ -78,8 +82,8 @@ function AppContent() {
     <div className="flex h-screen bg-background">
       {/* Desktop Sidebar */}
       <div className="hidden md:block w-64 flex-shrink-0">
-        <Sidebar 
-          activeTab={activeTab} 
+        <Sidebar
+          activeTab={activeTab}
           setActiveTab={(tab) => { setActiveTab(tab); }}
           darkMode={darkMode}
           setDarkMode={setDarkMode}
@@ -99,7 +103,7 @@ function AppContent() {
             <SheetTitle>Navigation Menu</SheetTitle>
             <SheetDescription>Access dashboard, analytics, alerts, devices, and settings</SheetDescription>
           </SheetHeader>
-          <Sidebar 
+          <Sidebar
             activeTab={activeTab}
             setActiveTab={(tab) => { setActiveTab(tab); setMobileOpen(false); }}
             darkMode={darkMode}

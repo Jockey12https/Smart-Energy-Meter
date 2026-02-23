@@ -36,11 +36,38 @@ def get_firestore_devices():
         
         devices = {}
         for doc in docs:
-            devices[doc.id] = doc.to_dict()
+            device_data = doc.to_dict()
+            device_data['id'] = doc.id
+            devices[doc.id] = device_data
         return devices
     except Exception as e:
         print(f"Error fetching devices from Firestore: {e}")
         return None
+
+def update_firestore_device_status(device_name: str, status_str: str):
+    """
+    Find a device by name in Firestore and update its status.
+    """
+    try:
+        db_fs = get_firestore_client()
+        devices_ref = db_fs.collection('devices')
+        # We search by name (e.g., 'Bulb 12W', 'Bulb 15W', 'Bulb 7W')
+        query = devices_ref.where('name', '==', device_name).limit(1)
+        docs = query.stream()
+        
+        updated = False
+        for doc in docs:
+            doc.reference.update({
+                'status': status_str,
+                'lastSeen': firebase_admin.firestore.SERVER_TIMESTAMP
+            })
+            print(f"Updated Firestore device '{device_name}' to {status_str}")
+            updated = True
+        
+        if not updated:
+            print(f"Device '{device_name}' not found in Firestore.")
+    except Exception as e:
+        print(f"Error updating Firestore device {device_name}: {e}")
 
 def get_realtime_data(path: str = "/"):
     try:
@@ -49,6 +76,38 @@ def get_realtime_data(path: str = "/"):
     except Exception as e:
         print(f"Error fetching data from {path}: {e}")
         return None
+
+def get_recent_readings(user_id: str, limit: int = 7):
+    """
+    Fetch the latest N readings for a user from RTDB.
+    Returns a list of dicts with keys: Irms, Power, Vrms, kWh, timestamp
+    """
+    try:
+        ref = db.reference(f'/SmartMeter/users/{user_id}/data')
+        # RTDB keys are formatted like '2026-02-06_10:16:44_924'
+        snapshot = ref.order_by_key().limit_to_last(limit).get()
+        
+        if not snapshot:
+            return []
+            
+        # snapshot is a dict, we want a sorted list of reading objects
+        sorted_keys = sorted(snapshot.keys())
+        readings = []
+        for key in sorted_keys:
+            data = snapshot[key]
+            # Convert raw strings to floats, default to 0.0
+            reading = {
+                'Irms': float(data.get('Irms', 0)),
+                'Power': float(data.get('Power', 0)),
+                'Vrms': float(data.get('Vrms', 0)),
+                'kWh': float(data.get('kWh', 0)),
+                'timestamp': key # The key itself is the ISO-like timestamp
+            }
+            readings.append(reading)
+        return readings
+    except Exception as e:
+        print(f"Error fetching recent readings for {user_id}: {e}")
+        return []
 
 def update_device_status(device_id: str, status: dict):
     try:

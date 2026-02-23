@@ -13,12 +13,17 @@ BILSTM_MODEL_PATH = os.path.join(MODELS_DIR, "bilstm_bulb_forecasting.h5")
 XGBOOST_MODEL_PATH = os.path.join(MODELS_DIR, "nilm_xgboost_model.pkl")
 # SCALERS
 BILSTM_SCALER_PATH = os.path.join(MODELS_DIR, "bilstm_scaler.pkl")
+ANOMALY_MODEL_PATH = os.path.join(MODELS_DIR, "energy_anomaly_model.pkl")
+ANOMALY_SCALER_PATH = os.path.join(MODELS_DIR, "anomaly_scaler.pkl")
 
 class MLService:
     def __init__(self):
         self.bilstm_scaler = None
+        self.anomaly_model = None
+        self.anomaly_scaler = None
         self.bulb_history = {0: [], 1: [], 2: []} # Track last 10 states for each bulb
         self.alerted_bulbs = set() # Track bulbs already alerted for fluctuation
+        self.last_predict_features = None # Store features for rolling stats
         self.load_models()
 
     def load_models(self):
@@ -46,6 +51,20 @@ class MLService:
             print("BiLSTM scaler loaded.")
         except Exception as e:
             print(f"Error loading BiLSTM scaler: {e}")
+
+        try:
+            print(f"Loading Anomaly model from {ANOMALY_MODEL_PATH}...")
+            self.anomaly_model = joblib.load(ANOMALY_MODEL_PATH)
+            print("Anomaly model loaded.")
+        except Exception as e:
+            print(f"Error loading Anomaly model: {e}")
+
+        try:
+            print(f"Loading Anomaly scaler from {ANOMALY_SCALER_PATH}...")
+            self.anomaly_scaler = joblib.load(ANOMALY_SCALER_PATH)
+            print("Anomaly scaler loaded.")
+        except Exception as e:
+            print(f"Error loading Anomaly scaler: {e}")
 
     def _check_fluctuation(self, bulb_idx: int, state: int):
         """
@@ -118,58 +137,203 @@ class MLService:
             print(f"Prediction error: {e}")
             raise e
 
-    def identify_device(self, power_readings: List[float]):
+    def set_all_offline(self):
+        """
+        Mark all devices as offline in both RTDB and Firestore.
+        Used when no real-time data is received within the threshold.
+        """
+        labels = ['12W Bulb', '15W Bulb', '7W Bulb']
+        firestore_labels = ['Bulb 12W', 'Bulb 15W', 'Bulb 7W']
+        
+        from services.firebase_service import update_device_status, update_firestore_device_status
+        
+        print("\n" + "!"*20 + " HEARTBEAT TIMEOUT: SETTING ALL OFFLINE " + "!"*20)
+        for i, label in enumerate(labels):
+            # RTDB
+            update_device_status(str(i), {"name": label, "status": "OFF", "is_active": False})
+            # Firestore
+            update_firestore_device_status(firestore_labels[i], "offline")
+        print("!"*64 + "\n")
+
+    def detect_anomaly(self, readings: List[dict]):
+        """
+        Detect energy anomalies using the energy_anomaly_model.pkl.
+        Expects a list of readings (at least 10 for rolling stats).
+        Features: ['Power', 'Vrms', 'Irms', 'PF', 'VA', 'VAR', 'Power_change', 'Current_change', 'Voltage_change', 'Power_rolling_std']
+        """
+        if not self.anomaly_model:
+            raise ValueError("Anomaly model is not loaded.")
+
+        try:
+            if len(readings) < 1:
+                return {"anomaly": False, "score": 0.0, "message": "Insufficient data"}
+
+            # Get latest reading
+            curr = readings[-1]
+            prev = readings[-2] if len(readings) > 1 else curr
+
+            # 1. New Model Features: ['Voltage', 'Global_intensity', 'power_w', 'hour']
+            power = curr.get('Power', 0.0)
+            vrms = curr.get('Vrms', 0.0)
+            irms = curr.get('Irms', 0.0)
+            
+            # Extract hour from timestamp: '2026-02-18_10:48:30_286'
+            hour = 12 # Default
+            ts_str = curr.get('timestamp', "")
+            if ts_str and "_" in ts_str:
+                try:
+                    time_part = ts_str.split('_')[1]
+                    hour = int(time_part.split(':')[0])
+                except:
+                    pass
+            elif not ts_str:
+                from datetime import datetime
+                hour = datetime.now().hour
+
+            # Features for energy_anomaly_model.pkl
+            features = [vrms, irms, power, hour]
+            
+            data = np.array(features).reshape(1, -1)
+            
+            # 2. Features for return dict (transparency for frontend)
+            va = vrms * irms
+            pf = power / va if va > 0 else 1.0
+            var_p = np.sqrt(max(0, (va**2) - (power**2)))
+            power_change = power - prev.get('Power', power)
+            all_powers = [r.get('Power', 0.0) for r in readings]
+            power_rolling_std = np.std(all_powers) if len(all_powers) > 1 else 0.0
+
+            # Prediction
+            prediction = self.anomaly_model.predict(data)
+            
+            # IsolationForest returns -1 for anomaly, 1 for normal
+            is_anomaly = bool(prediction[0] == -1)
+
+            # Try to get score if possible
+            score = 0.0
+            if hasattr(self.anomaly_model, 'decision_function'):
+                score = float(self.anomaly_model.decision_function(data)[0])
+            elif hasattr(self.anomaly_model, 'predict_proba'):
+                score = float(self.anomaly_model.predict_proba(data)[0][1])
+
+            print(f"\n[MLService] Anomaly Detection: {'!!! ANOMALY !!!' if is_anomaly else 'Normal'}")
+            print(f"Features (Model): {features}")
+            print(f"Prediction: {prediction}, Score: {score}")
+
+            return {
+                "is_anomaly": is_anomaly,
+                "score": score,
+                "features": {
+                    "Power": power,
+                    "Vrms": vrms,
+                    "Irms": irms,
+                    "PF": pf,
+                    "VA": va,
+                    "VAR": var_p,
+                    "Power_change": power_change,
+                    "Power_rolling_std": power_rolling_std,
+                    "Hour": hour
+                }
+            }
+        except Exception as e:
+            print(f"Anomaly detection error: {e}")
+            raise e
+
+    def identify_device(self, readings: List[dict]):
         """
         Identify device using XGBoost model.
+        Expects a list of reading dicts: [{'Irms', 'Power', 'Vrms', 'kWh', 'timestamp'}, ...]
         """
         if not self.xgboost_model:
             raise ValueError("XGBoost model is not loaded.")
         
         try:
-            # XGBoost expects 2D array
-            # Assuming power_readings is a list of features for one sample
-            data = np.array(power_readings).reshape(1, -1)
+            if not readings or len(readings) < 1:
+                return self.set_all_offline()
+
+            # 1. Strict Freshness Check
+            from datetime import datetime
+            latest_reading = readings[-1]
+            ts_str = latest_reading['timestamp'] # '2026-02-18_10:48:30_286'
+            try:
+                # Format: YYYY-MM-DD_HH:MM:SS_mmm
+                read_dt = datetime.strptime(ts_str.split('_')[0] + " " + ts_str.split('_')[1], "%Y-%m-%d %H:%M:%S")
+                # Also handle the milliseconds part if needed, but seconds is enough for freshness
+                now = datetime.now()
+                diff_seconds = (now - read_dt).total_seconds()
+                
+                # If data is older than 60 seconds, treat as offline
+                if diff_seconds > 60:
+                    print(f"[MLService] Data is stale ({int(diff_seconds)}s old). Marking all offline.")
+                    self.set_all_offline()
+                    return [[0, 0, 0]] # Return zeros
+            except Exception as ts_err:
+                print(f"[MLService] Timestamp parse error for '{ts_str}': {ts_err}")
+                # If we can't parse, fall back to what we have or proceed with caution
+
+            # 2. Heuristic: If power is very low (noise), return offline
+            main_power = latest_reading.get('Power', 0.0)
+            if main_power < 1.0:
+                print(f"[MLService] Total power {main_power}W is below threshold. Marking all offline.")
+                self.set_all_offline()
+                return [[0, 0, 0]]
+
+            # 3. Calculate 7 Features for XGBoost: ['Irms', 'Power', 'Vrms', 'kWh', 'DeltaP', 'VarP', 'PF']
+            # We take the features from the latest reading, and calculate DeltaP using the previous one.
+            curr = latest_reading
+            prev = readings[-2] if len(readings) > 1 else curr
+
+            irms = curr['Irms']
+            power = curr['Power']
+            vrms = curr['Vrms']
+            kwh = curr['kWh']
+            delta_p = power - prev['Power']
             
-            # If there is a scaler, we should use it. 
-            # Assuming raw data for now or pre-scaled.
+            va = vrms * irms
+            var_p = np.sqrt(max(0, (va**2) - (power**2)))
+            pf = power / va if va > 0 else 1.0
+
+            # XGBoost expects 2D array [irms, power, vrms, kwh, delta_p, var_p, pf]
+            features = [irms, power, vrms, kwh, delta_p, var_p, pf]
+            data = np.array(features).reshape(1, -1)
             
             prediction = self.xgboost_model.predict(data)
             
             # Log identified devices to terminal
             if len(prediction) > 0:
-                # Handle both 2D (batch) and 1D outputs
                 bits = prediction[0] if prediction.ndim > 1 else prediction
                 labels = ['12W Bulb', '15W Bulb', '7W Bulb']
+                firestore_labels = ['Bulb 12W', 'Bulb 15W', 'Bulb 7W']
                 print("\n" + "="*20 + " XGBOOST IDENTIFICATION " + "="*20)
+                print(f"Features used: {features}")
                 
-                from services.firebase_service import add_alert
+                from services.firebase_service import add_alert, update_device_status, update_firestore_device_status
                 import uuid
-                from datetime import datetime
 
                 for i, label in enumerate(labels):
                     state = int(bits[i])
                     status = "ON" if state else "OFF"
+                    status_str = "online" if state else "offline"
                     print(f"{label}: {status}")
                     
-                    # Check for fluctuation
+                    update_device_status(str(i), {"name": label, "status": status, "is_active": bool(state)})
+                    update_firestore_device_status(firestore_labels[i], status_str)
+
                     if self._check_fluctuation(i, state):
                         if i not in self.alerted_bulbs:
                             print(f"!!! FLUCTUATION DETECTED for {label} !!!")
                             alert_data = {
                                 "id": str(uuid.uuid4()),
                                 "title": "Device Fluctuation Detected",
-                                "message": f"Technical fault: {label} is fluctuating repeatedly (Potential Fault).",
+                                "message": f"Technical fault: {label} is fluctuating repeatedly.",
                                 "severity": "high",
                                 "timestamp": datetime.now().isoformat(),
                                 "is_read": False
                             }
                             add_alert(alert_data)
-                            self.alerted_bulbs.add(i) # Mark as alerted
-                        else:
-                            print(f"Fluctuation continued for {label}, but alert already sent.")
+                            self.alerted_bulbs.add(i)
                 print("="*64 + "\n")
 
-            # convert numpy type to python native
             return prediction.tolist()
         except Exception as e:
             print(f"Device identification error: {e}")
