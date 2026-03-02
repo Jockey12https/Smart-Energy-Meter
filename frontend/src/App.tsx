@@ -12,6 +12,7 @@ const Dashboard = lazy(() => import('@/components/dashboard/Dashboard'));
 const Analytics = lazy(() => import('@/pages/Analytics'));
 const Alerts = lazy(() => import('@/pages/Alerts'));
 const Anomaly = lazy(() => import('@/pages/Anomaly'));
+const Billing = lazy(() => import('@/pages/Billing'));
 const Devices = lazy(() => import('@/pages/Devices'));
 const Admin = lazy(() => import('@/pages/Admin'));
 const Settings = lazy(() => import('@/pages/Settings'));
@@ -58,6 +59,9 @@ function AppContent() {
       case 'anomaly':
         if (currentRole === 'admin') return <Admin />;
         return <Anomaly />;
+      case 'billing':
+        if (currentRole === 'admin') return <Admin />;
+        return <Billing />;
       case 'devices':
         if (currentRole === 'admin') return <Admin />;
         return <Devices />;

@@ -239,6 +239,88 @@ class MLService:
             print(f"Anomaly detection error: {e}")
             raise e
 
+    def get_billing_summary(self, user_id: str):
+        """
+        Calculate billing summary: current cost, target, and predicted cost in RS (₹).
+        Rate: ₹7.00/kWh
+        """
+        from services.firebase_service import get_recent_readings
+        from datetime import datetime
+        
+        try:
+            # 1. Fetch recent readings
+            readings = get_recent_readings(user_id, limit=50) # Fetch more for better prediction
+            
+            if not readings:
+                return {
+                    "current_cost": 0.0,
+                    "monthly_target": 500.0, # Default target ₹500
+                    "predicted_cost": 0.0,
+                    "currency": "RS",
+                    "unit": "kWh"
+                }
+
+            # 2. Current Cost
+            # Assuming kWh is cumulative for the month or we take the latest
+            latest_kwh = readings[-1].get('kWh', 0.0)
+            rate = 7.00
+            current_cost = latest_kwh * rate
+
+            # 3. Predict Future Usage using BiLSTM
+            # User says: BiLSTM predicts value for next day (Daily kWh)
+            # Extrapolate for 30 days: (Daily kWh * 7) * 30
+            predicted_daily_kwh = 0.0
+            try:
+                curr = readings[-1]
+                # Features: [Power, Vrms, Irms, kWh, 0, 0] -> 6 features
+                input_features = [
+                    curr.get('Power', 0.0), 
+                    curr.get('Vrms', 0.0), 
+                    curr.get('Irms', 0.0), 
+                    curr.get('kWh', 0.0),
+                    0.0, 0.0
+                ]
+                predicted_daily_kwh = self.predict_energy(input_features)
+            except Exception as e:
+                print(f"Prediction for billing failed: {e}")
+                # Fallback: simple average if possible
+                if len(readings) > 1:
+                    first_kwh = readings[0].get('kWh', 0.0)
+                    days_elapsed = 1 # Simplified for fallback
+                    predicted_daily_kwh = (latest_kwh - first_kwh) / max(1, days_elapsed)
+
+            predicted_monthly_cost = predicted_daily_kwh * rate * 30
+
+            # 4. Backtrack to Current Cost for Viability
+            # Calculation: (Current Cost / Days Passed) * 30 vs Predicted
+            now = datetime.now()
+            days_passed = now.day
+            if days_passed == 0: days_passed = 1
+            
+            actual_trajectory_cost = (current_cost / days_passed) * 30
+            
+            # Viability check: If the BiLSTM prediction is wildly different from actual trajectory, 
+            # we can average them or return a "confidence" metric.
+            # For "backtracking", we'll use a weighted average: 40% actual trajectory, 60% BiLSTM
+            viable_predicted_cost = (actual_trajectory_cost * 0.4) + (predicted_monthly_cost * 0.6)
+            
+            # 5. Monthly Target
+            # Based on previous cost used (actual trajectory)
+            monthly_target = actual_trajectory_cost * 1.1 # 10% buffer above current trajectory
+
+            return {
+                "current_cost": round(current_cost, 2),
+                "monthly_target": round(monthly_target, 2),
+                "predicted_cost": round(viable_predicted_cost, 2),
+                "currency": "RS",
+                "unit": "kWh",
+                "latest_kwh": latest_kwh,
+                "viability_score": round(min(100, (1 - abs(viable_predicted_cost - actual_trajectory_cost)/max(1, actual_trajectory_cost)) * 100), 2)
+            }
+        except Exception as e:
+            print(f"Error in get_billing_summary: {e}")
+            raise e
+
     def identify_device(self, readings: List[dict]):
         """
         Identify device using XGBoost model.

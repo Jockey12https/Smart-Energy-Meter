@@ -120,5 +120,17 @@ async def detect_anomaly(user_id: str = Query(..., description="Firebase UID of 
         print(f"Anomaly detection trigger failed: {e}")
         raise HTTPException(status_code=500, detail=f"Anomaly detection failed: {str(e)}")
 
+@app.get("/billing/summary")
+async def get_billing_summary_endpoint(user_id: str = Query(..., description="Firebase UID of the logged-in user")):
+    """
+    Get billing summary including current cost, monthly target, and predicted cost.
+    """
+    try:
+        result = ml_service_instance.get_billing_summary(user_id)
+        return result
+    except Exception as e:
+        print(f"Billing summary failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Billing summary failed: {str(e)}")
+
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

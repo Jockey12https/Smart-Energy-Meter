@@ -30,16 +30,15 @@ import { endpoints } from '@/services/api';
 const mockDevices: Device[] = [];
 
 export default function Devices() {
+  const { currentUser } = useAuth();
   const [devices, setDevices] = useState<Device[]>([]);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newDevice, setNewDevice] = useState({
     name: '',
     meterId: '',
     location: '',
-    assignedUser: ''
+    assignedUser: currentUser?.email || ''
   });
-
-  const { currentUser } = useAuth();
   const [identifying, setIdentifying] = useState(false);
   const [identResults, setIdentResults] = useState<number[]>([]);
 
@@ -107,7 +106,7 @@ export default function Devices() {
                 lastSeen: value.lastSeen || value.last_active || new Date().toISOString(),
                 firmwareVersion: value.firmwareVersion || value.firmware || '1.0.0',
                 batteryLevel: value.batteryLevel || value.battery || 100,
-                assignedUser: value.userEmail || value.assigned_user || 'Unassigned',
+                assignedUser: currentUser?.email || value.userEmail || value.assigned_user || 'Unassigned',
                 isAIVerified: existingDevice?.isAIVerified || false
               };
             });
@@ -167,7 +166,7 @@ export default function Devices() {
     };
 
     setDevices(prev => [...prev, device]);
-    setNewDevice({ name: '', meterId: '', location: '', assignedUser: '' });
+    setNewDevice({ name: '', meterId: '', location: '', assignedUser: currentUser?.email || '' });
     setIsAddDialogOpen(false);
   };
 
