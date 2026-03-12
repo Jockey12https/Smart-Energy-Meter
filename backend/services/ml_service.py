@@ -73,10 +73,9 @@ class MLService:
         try:
             from transformers import pipeline
             import torch
-            print("Loading Hugging Face Chatbot model (meta-llama)...")
-            # Using meta-llama/Llama-2-7b-chat-hf as a placeholder, but a smaller one like GPT2 or TinyLlama might be better for quick local dev if a large model is not cached.
-            # You might need to change the model ID depending on the exact meta-llama model available locally.
-            model_id = "meta-llama/Llama-2-7b-chat-hf" 
+            print("Loading Hugging Face Chatbot model (TinyLlama)...")
+            # Using TinyLlama instead of meta-llama to avoid massive downloads and auth issues
+            model_id = "TinyLlama/TinyLlama-1.1B-Chat-v1.0" 
             
             # Since loading Llama takes a long time and a lot of memory, we wrap it in a try-except
             # but usually it's better to load it lazily or separately if it's too big.
@@ -459,6 +458,9 @@ class MLService:
         is_energy_query = any(keyword in message_lower for keyword in energy_keywords)
         
         system_context = ""
+        latest_power = 0.0
+        latest_kwh = 0.0
+        
         if is_energy_query:
             # 2. Fetch data from Firebase
             readings = get_recent_readings(user_id, limit=50) # Fetch recent readings
@@ -483,11 +485,26 @@ Average Power (Recent): {avg_power:.2f} W
 Peak Power (Recent): {max_power:.2f} W
 Current Electricity Rate: ₹7.00/kWh (Estimated cost: ₹{latest_kwh * 7.00:.2f})
 
-Instructions: You are a Smart Energy Assistant. Answer the user's query about their energy usage using ONLY the data provided above. Provide practical recommendations for reducing consumption if asked. Do not fabricate data.
+You are a Smart Energy Assistant integrated with a Firebase database containing smart meter energy data and powered by a local Hugging Face language model for natural language understanding and generation.
+
+Your responsibilities:
+1. Smart Meter Data Queries
+You must:
+- Use the Hugging Face NLP/LLM model to interpret the user query and extract intent and parameters.
+- Retrieve the relevant smart meter data from Firebase.
+- Process and analyze the retrieved data to compute total consumption, average usage, peak usage periods, cost estimates, trends or anomalies.
+- Generate a clear, structured response using the Hugging Face LLM, including key insights, calculated values, brief explanation of trends, and practical recommendations for reducing consumption.
+- Never fabricate or guess energy data. Only respond using actual values retrieved from Firebase.
+- If the query requires parameters that are missing, ask the user for clarification before retrieving data.
+
+5. Response Style
+Always provide answers that are accurate, concise, clearly structured, and easy for a non-technical user to understand.
+When presenting analytics, prefer structured formats such as bullet points, tables, summary insights, and actionable recommendations.
 """
         else:
             system_context = """[System Context]
-Instructions: You are a Smart Energy Assistant, but the user is asking a general question. Answer normally using your general knowledge without referring to specific smart meter data. Be helpful, concise, and friendly.
+You are a Smart Energy Assistant. The user is asking a general question unrelated to smart meter data.
+Respond normally using your general knowledge without accessing Firebase. Be helpful, concise, and friendly.
 """
 
         # 4. Construct Prompt
@@ -527,7 +544,10 @@ Instructions: You are a Smart Energy Assistant, but the user is asking a general
             else:
                 # Fallback if model didn't load (e.g., due to memory constraints)
                 if is_energy_query:
-                    return f"I can see you are asking about energy! Currently, my advanced AI model is initializing, but based on your recent data: your current power is {latest_power:.2f}W and total usage is {latest_kwh:.2f}kWh."
+                    if latest_kwh == 0 and latest_power == 0:
+                        return "I can see you are asking about energy, but no data could be found for you in the database!"
+                    else:
+                        return f"I can see you are asking about energy! Currently, my advanced AI model is initializing, but based on your recent data: your current power is {latest_power:.2f}W and total usage is {latest_kwh:.2f}kWh."
                 else:
                     return "My advanced AI is currently initializing. How else can I help you today?"
                     

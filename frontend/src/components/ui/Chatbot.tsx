@@ -94,7 +94,7 @@ export function Chatbot() {
                           <div className={`p-2 rounded-full flex-shrink-0 ${msg.role === 'user' ? 'bg-primary/10 ml-2' : 'bg-muted mr-2'}`}>
                             {msg.role === 'user' ? <User size={14} className="text-primary" /> : <Bot size={14} className="text-foreground" />}
                           </div>
-                          <div className={`p-3 rounded-2xl text-sm \${msg.role === 'user' ? 'bg-primary text-primary-foreground rounded-tr-sm' : 'bg-muted text-foreground rounded-tl-sm'}`}>
+                          <div className={`p-3 rounded-2xl text-sm text-black ${msg.role === 'user' ? 'bg-primary/20 rounded-tr-sm' : 'bg-muted rounded-tl-sm'}`}>
                             {msg.content}
                           </div>
                         </div>
@@ -102,9 +102,9 @@ export function Chatbot() {
                     ))}
                     {isLoading && (
                       <div className="flex justify-start">
-                        <div className="flex items-center space-x-2 bg-muted text-foreground p-3 rounded-2xl rounded-tl-sm">
-                          <Loader2 size={16} className="animate-spin text-muted-foreground" />
-                          <span className="text-sm text-muted-foreground">Thinking...</span>
+                        <div className="flex items-center space-x-2 bg-muted text-black p-3 rounded-2xl rounded-tl-sm">
+                          <Loader2 size={16} className="animate-spin text-black" />
+                          <span className="text-sm text-black">Thinking...</span>
                         </div>
                       </div>
                     )}
