@@ -17,6 +17,7 @@ const Devices = lazy(() => import('@/pages/Devices'));
 const Admin = lazy(() => import('@/pages/Admin'));
 const Settings = lazy(() => import('@/pages/Settings'));
 import AdminLogin from '@/components/auth/AdminLogin';
+import { Chatbot } from '@/components/ui/Chatbot';
 
 function AppContent() {
   const { currentUser, currentRole, loading } = useAuth();
@@ -136,6 +137,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <AppContent />
+      <Chatbot />
     </TooltipProvider>
   </AuthProvider>
 );

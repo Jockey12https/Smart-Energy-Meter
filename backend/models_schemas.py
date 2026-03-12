@@ -17,10 +17,20 @@ class PredictionRequest(BaseModel):
 
 class Alert(BaseModel):
     id: str
+    title: str
     message: str
-    severity: str  # 'low', 'medium', 'high'
+    severity: str
     timestamp: str
-    is_read: bool
+    is_read: bool = False
+
+class ChatMessage(BaseModel):
+    role: str # "user" or "assistant"
+    content: str
+
+class ChatRequest(BaseModel):
+    user_id: str
+    message: str
+    history: List[ChatMessage] = []
 
 class DeviceStatus(BaseModel):
     device_id: str

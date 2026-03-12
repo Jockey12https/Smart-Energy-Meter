@@ -24,6 +24,10 @@ class MLService:
         self.bulb_history = {0: [], 1: [], 2: []} # Track last 10 states for each bulb
         self.alerted_bulbs = set() # Track bulbs already alerted for fluctuation
         self.last_predict_features = None # Store features for rolling stats
+        
+        # HuggingFace Chatbot pipeline
+        self.chat_pipeline = None
+        
         self.load_models()
 
     def load_models(self):
@@ -65,6 +69,27 @@ class MLService:
             print("Anomaly scaler loaded.")
         except Exception as e:
             print(f"Error loading Anomaly scaler: {e}")
+
+        try:
+            from transformers import pipeline
+            import torch
+            print("Loading Hugging Face Chatbot model (meta-llama)...")
+            # Using meta-llama/Llama-2-7b-chat-hf as a placeholder, but a smaller one like GPT2 or TinyLlama might be better for quick local dev if a large model is not cached.
+            # You might need to change the model ID depending on the exact meta-llama model available locally.
+            model_id = "meta-llama/Llama-2-7b-chat-hf" 
+            
+            # Since loading Llama takes a long time and a lot of memory, we wrap it in a try-except
+            # but usually it's better to load it lazily or separately if it's too big.
+            self.chat_pipeline = pipeline(
+                "text-generation",
+                model=model_id,
+                device_map="auto",
+                torch_dtype=torch.float16,
+            )
+            print("Hugging Face Chatbot model loaded.")
+        except Exception as e:
+            print(f"Error loading Hugging Face Chatbot model: {e}")
+            print("Chatbot will fallback to simple responses if model unavailable.")
 
     def _check_fluctuation(self, bulb_idx: int, state: int):
         """
@@ -420,5 +445,94 @@ class MLService:
         except Exception as e:
             print(f"Device identification error: {e}")
             raise e
+
+    def process_chat_query(self, message: str, history: List[dict], user_id: str):
+        """
+        Processes a chat message using the HuggingFace LLM and Firebase data if needed.
+        """
+        from services.firebase_service import get_recent_readings
+        
+        # 1. Very basic intent detection (can be improved by asking the LLM first)
+        message_lower = message.lower()
+        energy_keywords = ["energy", "power", "consumption", "usage", "cost", "bill", "electricity", "kwh", "yesterday", "today", "tips"]
+        
+        is_energy_query = any(keyword in message_lower for keyword in energy_keywords)
+        
+        system_context = ""
+        if is_energy_query:
+            # 2. Fetch data from Firebase
+            readings = get_recent_readings(user_id, limit=50) # Fetch recent readings
+            
+            if not readings:
+                system_context = "System Note: The user has asked about energy data, but no data could be found in the Firebase database for this user."
+            else:
+                # 3. Analyze data
+                latest_reading = readings[-1]
+                latest_power = latest_reading.get('Power', 0.0)
+                latest_kwh = latest_reading.get('kWh', 0.0)
+                
+                # Simple analysis for context
+                total_power = sum(r.get('Power', 0.0) for r in readings)
+                avg_power = total_power / len(readings) if readings else 0
+                max_power = max(r.get('Power', 0.0) for r in readings) if readings else 0
+                
+                system_context = f"""[System Context: Energy Data from Firebase]
+Current Power Consumption: {latest_power:.2f} W
+Total Energy Used (kWh): {latest_kwh:.2f} kWh
+Average Power (Recent): {avg_power:.2f} W
+Peak Power (Recent): {max_power:.2f} W
+Current Electricity Rate: ₹7.00/kWh (Estimated cost: ₹{latest_kwh * 7.00:.2f})
+
+Instructions: You are a Smart Energy Assistant. Answer the user's query about their energy usage using ONLY the data provided above. Provide practical recommendations for reducing consumption if asked. Do not fabricate data.
+"""
+        else:
+            system_context = """[System Context]
+Instructions: You are a Smart Energy Assistant, but the user is asking a general question. Answer normally using your general knowledge without referring to specific smart meter data. Be helpful, concise, and friendly.
+"""
+
+        # 4. Construct Prompt
+        # Format for Llama chat models
+        prompt = ""
+        # Add system context as the first system message if history doesn't have it
+        prompt += f"<<SYS>>\n{system_context}\n<</SYS>>\n\n"
+        
+        # Add a few history items (limit to keep prompt small)
+        for h in history[-3:]:
+            if h.get('role') == 'user':
+                prompt += f"[INST] {h.get('content', '')} [/INST] "
+            else:
+                prompt += f"{h.get('content', '')} "
+                
+        # Add current message
+        prompt += f"[INST] {message} [/INST]"
+
+        # 5. Generate Response using Hugging Face Pipeline
+        try:
+            if self.chat_pipeline:
+                outputs = self.chat_pipeline(
+                    prompt, 
+                    max_new_tokens=250, 
+                    temperature=0.7, 
+                    do_sample=True,
+                    top_k=50,
+                    top_p=0.9
+                )
+                
+                # Extract the newly generated text (varies slightly by model/pipeline)
+                generated_text = outputs[0]['generated_text']
+                
+                # Naive extraction of the response part after the last [/INST]
+                response_part = generated_text.split('[/INST]')[-1].strip()
+                return response_part
+            else:
+                # Fallback if model didn't load (e.g., due to memory constraints)
+                if is_energy_query:
+                    return f"I can see you are asking about energy! Currently, my advanced AI model is initializing, but based on your recent data: your current power is {latest_power:.2f}W and total usage is {latest_kwh:.2f}kWh."
+                else:
+                    return "My advanced AI is currently initializing. How else can I help you today?"
+                    
+        except Exception as e:
+            print(f"Error generating chat response: {e}")
+            return "I apologize, but I encountered an error while processing your request. Please try again later."
 
 ml_service_instance = MLService()

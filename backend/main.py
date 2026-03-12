@@ -7,7 +7,7 @@ import sys
 # Ensure backend directory is in path for imports
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from models_schemas import DeviceIdentificationRequest, PredictionRequest, Alert
+from models_schemas import DeviceIdentificationRequest, PredictionRequest, Alert, ChatRequest
 from services.firebase_service import get_realtime_data, add_alert, update_device_status, get_firestore_devices, acknowledge_alert, get_recent_readings
 from services.ml_service import ml_service_instance
 
@@ -131,6 +131,22 @@ async def get_billing_summary_endpoint(user_id: str = Query(..., description="Fi
     except Exception as e:
         print(f"Billing summary failed: {e}")
         raise HTTPException(status_code=500, detail=f"Billing summary failed: {str(e)}")
+
+@app.post("/chat")
+async def chat_endpoint(request: ChatRequest):
+    """
+    Chat endpoint for the Smart Energy Assistant.
+    """
+    try:
+        response_text = ml_service_instance.process_chat_query(
+            message=request.message,
+            history=[h.dict() for h in request.history],
+            user_id=request.user_id
+        )
+        return {"response": response_text}
+    except Exception as e:
+        print(f"Chat processing failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
